@@ -14,13 +14,13 @@ try{
 }catch{}
 /* ==================== Firebase Config ==================== */
 const firebaseConfig = {
-  apiKey: "AIzaSyCrb6EKsuaZunD5aIakwho07Sh_UXAceXc",
-  authDomain: "ustaogluaptyonetim.firebaseapp.com",
-  projectId: "ustaogluaptyonetim",
-  storageBucket: "ustaogluaptyonetim.firebasestorage.app",
-  messagingSenderId: "829433786147",
-  appId: "1:829433786147:web:05dd0c2d866767b2d52696",
-  measurementId: "G-TX1BERLB12"
+  apiKey: "AIzaSyAaDiuQmFW2SA1HGQ1G8CH7YmYC1w104lY",
+  authDomain: "apartment-management-v2.firebaseapp.com",
+  projectId: "apartment-management-v2",
+  storageBucket: "apartment-management-v2.firebasestorage.app",
+  messagingSenderId: "614034681672",
+  appId: "1:614034681672:web:0b7ad34ad970ea6178cd7d",
+  measurementId: "G-973B4DLE2T"
 };
 
 /* ==================== Init ==================== */
