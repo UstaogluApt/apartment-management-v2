@@ -1037,7 +1037,7 @@ async function enhancePaymentForm(){
 
 function paymentPeriod(rec){
   return ((rec?.month ?? rec?.period ?? '') + '').trim();
-
+}
 async function migratePaymentsFillFlatNo(){
   // Eski kayıtları otomatik toparla: flatNo yoksa residentId'den doldur.
   if(currentRole!=='admin') return;
@@ -1074,7 +1074,6 @@ async function migratePaymentsFillFlatNo(){
   }catch(err){
     console.warn('V2 migration failed:', err);
   }
-}
 }
 
 // Ay/ Açıklama zorunluluğunu yönet zorunluluğunu yönet
@@ -1869,7 +1868,7 @@ onAuthStateChanged(auth, async (user)=>{
   }
 
   currentRole = (await fetchRole(currentUser.uid)) ? 'admin' : 'user';
-  await migratePaymentsFillFlatNo();
+  if (typeof migratePaymentsFillFlatNo === 'function') { await migratePaymentsFillFlatNo(); }
   qsa('.admin-only').forEach(el=> currentRole==='admin'?show(el):hide(el));
   // Hide export buttons by id for non-admins
   if(currentRole!=='admin'){
