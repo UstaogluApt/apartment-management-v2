@@ -189,8 +189,3 @@ input,select,textarea{width:100%;padding:10px 12px;border:1px solid var(--border
   .layout .sidebar,
   aside.sidebar{ position: static !important; }
 }
-
-
-/* ==== Sakin Aktif/Pasif Rozetleri ==== */
-.badge.active{background:#e7f7ee;color:#0f6a3c;border:1px solid #bfead0;}
-.badge.inactive{background:#f3f4f6;color:#374151;border:1px solid #e5e7eb;}

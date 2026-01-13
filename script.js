@@ -30,29 +30,6 @@ const auth = getAuth(app);
 (async()=>{ try{ await setPersistence(auth, browserSessionPersistence); }catch(e){ console.error('setPersistence failed', e); } })();
 const db = getFirestore(app);
 
-// Debug: expose connected Firebase project (helps diagnose invalid-credential)
-window.__fbProjectId = (app?.options?.projectId) || firebaseConfig.projectId;
-window.__fbAuthDomain = firebaseConfig.authDomain;
-try{
-  const loginView = document.getElementById('loginView');
-  if(loginView && !document.getElementById('fbProjectHint')){
-    const form = document.getElementById('loginForm');
-    const hint = document.createElement('div');
-    hint.id = 'fbProjectHint';
-    hint.className = 'muted';
-    hint.style.marginTop = '10px';
-    hint.style.fontSize = '12px';
-    hint.textContent = `Bağlı Firebase: ${window.__fbProjectId}`;
-    // put under the login form if possible
-    if(form && form.parentElement){
-      form.parentElement.appendChild(hint);
-    }else{
-      loginView.appendChild(hint);
-    }
-  }
-}catch{}
-
-
 /* ==================== Helpers ==================== */
 const qs  = (s) => document.querySelector(s);
 const qsa = (s) => Array.from(document.querySelectorAll(s));
@@ -186,17 +163,7 @@ loginForm?.addEventListener('submit', async (e)=>{ e.preventDefault(); loginErro
     window.__loginInProgress = false;
 
   }catch(err){
-    console.error(err);
-    const code = err?.code || '';
-    if(code === 'auth/invalid-credential' || code === 'auth/wrong-password' || code === 'auth/user-not-found'){
-      loginError.textContent = 'E-posta veya şifre hatalı. (Doğru Firebase projesine bağlı olduğunuzu da kontrol edin.)';
-    }else if(code === 'auth/too-many-requests'){
-      loginError.textContent = 'Çok fazla deneme yapıldı. Bir süre sonra tekrar deneyin.';
-    }else if(code === 'auth/unauthorized-domain'){
-      loginError.textContent = 'Bu domain yetkili değil. Firebase > Auth > Authorized domains listesini kontrol edin.';
-    }else{
-      loginError.textContent = err?.message || 'Giriş başarısız.';
-    }
+    console.error(err); loginError.textContent = err?.message || "Giriş başarısız.";
   }
 });
 qs('#btnLogout')?.addEventListener('click', async ()=>{ try{ await signOut(auth); }catch(e){ console.error(e); }});
@@ -697,12 +664,42 @@ qsa('.role-edit').forEach(btn=>{
 /* ==================== Residents ==================== */
 async function renderResidentsTable(){
   const tbody = qs('#resTbody'); if(!tbody) return;
-  const rows = await listResidents();
+
+  // Filtre (Aktif / Pasif / Tümü)
+  const filterSel = qs('#resFilter');
+  const filterVal = (filterSel?.value || 'active');
+
+  // Filtre değişince tekrar çiz
+  if(filterSel && !filterSel.dataset.bound){
+    filterSel.addEventListener('change', ()=> renderResidentsTable());
+    filterSel.dataset.bound = '1';
+  }
+
+  let rows = await listResidents();
   rows.sort((a,b)=> (''+(a.flatNo||'')).localeCompare((''+(b.flatNo||'')), 'tr', {numeric:true}));
+
+  // aktif/pasif filtre uygula
+  rows = rows.filter(r=>{
+    if(filterVal==='all') return true;
+    const active = isResidentActive(r);
+    if(filterVal==='active') return active;
+    if(filterVal==='passive') return !active;
+    return true;
+  });
 
   const isAdminUI = currentRole==='admin';
   tbody.innerHTML = rows.map(r=>{
-    const activeBadge = '';
+    const active = isResidentActive(r);
+    const activeBadge = active
+      ? '<span class="badge paid">Aktif</span>'
+      : '<span class="badge unpaid">Pasif</span>';
+
+    const toggleBtn = isAdminUI
+      ? `<button type="button" class="btn small outline" data-toggle="${r.id}" data-to="${active ? 'passive' : 'active'}">
+           ${active ? '⛔ Pasife Al' : '✅ Aktife Al'}
+         </button>`
+      : '';
+
     return `
     <tr data-id="${r.id}">
       <td>${r.flatNo||''}</td>
@@ -711,14 +708,16 @@ async function renderResidentsTable(){
       <td>${r.email||''}</td>
       <td>${statusToTR(r.status)}</td>
       <td>${r.licensePlate||''}</td>
+      <td>${activeBadge}</td>
       <td>
         ${isAdminUI ? `
           <button type="button" class="btn small" data-edit="${r.id}">✏️ Düzenle</button>
+          ${toggleBtn}
           <button type="button" class="btn small danger" data-del="${r.id}">🗑️ Sil</button>
         ` : ''}
       </td>
     </tr>`;
-  }).join('') || `<tr><td colspan="7" style="text-align:center;color:#777;padding:16px">Henüz kayıt yok</td></tr>`;
+  }).join('') || `<tr><td colspan="8" style="text-align:center;color:#777;padding:16px">Henüz kayıt yok</td></tr>`;
 
   if (!tbody.dataset.bound) {
     tbody.addEventListener('click', onResidentsTableClick);
@@ -726,12 +725,48 @@ async function renderResidentsTable(){
   }
 }
 
+
+async function setResidentActive(residentId, makeActive){
+  const list = await listResidents();
+  const rec = list.find(x=>x.id===residentId);
+  if(!rec) return;
+
+  const nowISO = new Date().toISOString();
+
+  if(makeActive){
+    // Bu dairede başka aktif varsa pasife al
+    const flatNo = String(rec.flatNo||'').trim();
+    if(flatNo){
+      await deactivateActiveResidentsForFlat(flatNo, residentId, nowISO);
+    }
+    await updateResident(residentId, { isActive:true, moveOutDate:null });
+  }else{
+    await updateResident(residentId, { isActive:false, moveOutDate: nowISO });
+  }
+}
 async function onResidentsTableClick(e){
-  const editBtn = e.target.closest('button[data-edit]');
-  const delBtn  = e.target.closest('button[data-del]');
-  if (!editBtn && !delBtn) return;
+  const editBtn   = e.target.closest('button[data-edit]');
+  const delBtn    = e.target.closest('button[data-del]');
+  const toggleBtn = e.target.closest('button[data-toggle]');
+
+  if(!editBtn && !delBtn && !toggleBtn) return;
   e.preventDefault(); e.stopPropagation();
+
   if(currentRole!=='admin'){ alert('Sadece yönetici işlem yapabilir.'); return; }
+
+  if(toggleBtn){
+    const id = toggleBtn.getAttribute('data-toggle');
+    const to = toggleBtn.getAttribute('data-to'); // active | passive
+    try{
+      await setResidentActive(id, to==='active');
+      await renderResidentsTable();
+      await renderDashboard();
+    }catch(err){
+      console.error(err);
+      alert('Aktiflik değiştirilemedi: ' + (err?.message || 'Bilinmeyen hata'));
+    }
+    return;
+  }
 
   if(editBtn){
     try{
@@ -756,6 +791,7 @@ async function onResidentsTableClick(e){
       console.error(err);
       alert('Düzenleme açılamadı: ' + (err?.message || 'Bilinmeyen hata'));
     }
+    return;
   }
 
   if(delBtn){
@@ -790,27 +826,52 @@ qs('#addResident')?.addEventListener('click',(e)=>{
 qs('#formResident')?.addEventListener('submit', async (e)=>{
   e.preventDefault();
   if(currentRole!=='admin'){ alert('Sadece yönetici işlem yapabilir.'); return; }
+
   const formObj = Object.fromEntries(new FormData(e.target).entries());
-  const payload = {
-    ...formObj,
-    status: statusToEN(formObj.status),
-    isActive: true,
-    moveInDate: new Date().toISOString()
-  };
+  const nowISO = new Date().toISOString();
+
   try{
     if(editingResidentId){
+      // Düzenlemede aktif/pasif durumunu KORU (yanlışlıkla aktifleşmesin)
+      const list = await listResidents();
+      const rec = list.find(x=>x.id===editingResidentId) || {};
+      const payload = {
+        ...rec,
+        ...formObj,
+        status: statusToEN(formObj.status),
+        // rec.isActive aynen kalsın
+        isActive: (typeof rec.isActive==='boolean') ? rec.isActive : true,
+        moveInDate: rec.moveInDate || nowISO
+      };
       await updateResident(editingResidentId, payload);
     }else{
+      // Yeni kayıt: default aktif
+      const payload = {
+        ...formObj,
+        status: statusToEN(formObj.status),
+        isActive: true,
+        moveInDate: nowISO
+      };
       const res = await addResident(payload);
-      // Eğer fees sayfasından "Yeni Sakin Ata" ile geldiysek, eski aktif sakini pasifle
-      if(assignFlatOnSave){
-        // (removed move-out flow)
-        assignFlatOnSave = null;
+
+      // Aynı dairede varsa eski aktif sakini pasife al (taşınma senaryosu)
+      const flatNo = String(payload.flatNo||'').trim();
+      if(flatNo){
+        await deactivateActiveResidentsForFlat(flatNo, res.id, nowISO);
       }
+
+      assignFlatOnSave = null;
     }
-    closeModals(); e.target.reset(); editingResidentId = null;
-    await renderResidentsTable(); await renderDashboard();
-  }catch(err){ console.error(err); alert('Kaydedilemedi: ' + (err?.message||'Bilinmeyen hata')); }
+
+    closeModals();
+    e.target.reset();
+    editingResidentId = null;
+    await renderResidentsTable();
+    await renderDashboard();
+  }catch(err){
+    console.error(err);
+    alert('Kaydedilemedi: ' + (err?.message||'Bilinmeyen hata'));
+  }
 });
 
 async function deactivateActiveResidentsForFlat(flatNo, newId, moveInISO){
@@ -1071,7 +1132,6 @@ async function enhancePaymentForm(){
 function paymentPeriod(rec){
   return ((rec?.month ?? rec?.period ?? '') + '').trim();
 }
-
 async function migratePaymentsFillFlatNo(){
   // Eski kayıtları otomatik toparla: flatNo yoksa residentId'den doldur.
   if(currentRole!=='admin') return;
@@ -1902,7 +1962,7 @@ onAuthStateChanged(auth, async (user)=>{
   }
 
   currentRole = (await fetchRole(currentUser.uid)) ? 'admin' : 'user';
-  await migratePaymentsFillFlatNo();
+  if (typeof migratePaymentsFillFlatNo === 'function') { await migratePaymentsFillFlatNo(); }
   qsa('.admin-only').forEach(el=> currentRole==='admin'?show(el):hide(el));
   // Hide export buttons by id for non-admins
   if(currentRole!=='admin'){
