@@ -36,8 +36,8 @@ const qsa = (s) => Array.from(document.querySelectorAll(s));
 const show = (el)=> el && el.classList.remove('hidden');
 const hide = (el)=> el && el.classList.add('hidden');
 const fmtTRY = new Intl.NumberFormat('tr-TR', { style:'currency', currency:'TRY' });
-const fmtDate = (v)=> { if(!v) return "-"; const d=v instanceof Date?v:new Date(v); return d.toLocaleDateString('tr-TR',{year:'numeric',month:'short',day:'numeric'}); };
-// Basit bilgilendirme mesajı (toast) - CSS gerektirmez
+
+// Basit bilgilendirme mesajı (toast) - ekstra CSS gerektirmez
 function showToast(message, type='info', ms=3500){
   try{
     const id = 'toastWrap';
@@ -48,11 +48,11 @@ function showToast(message, type='info', ms=3500){
       wrap.style.position = 'fixed';
       wrap.style.right = '16px';
       wrap.style.top = '16px';
-      wrap.style.zIndex = '9999';
+      wrap.style.zIndex = '20000';
       wrap.style.display = 'flex';
       wrap.style.flexDirection = 'column';
       wrap.style.gap = '10px';
-      document.body.appendChild(wrap);
+      (document.body || document.documentElement).appendChild(wrap);
     }
     const t = document.createElement('div');
     t.textContent = message;
@@ -65,10 +65,19 @@ function showToast(message, type='info', ms=3500){
     t.style.background = (type==='success') ? '#e9f9ee' : (type==='warning' ? '#fff7e6' : (type==='danger' ? '#ffe9e9' : '#eef3ff'));
     t.style.color = '#111';
     wrap.appendChild(t);
-    setTimeout(()=>{ try{ t.style.opacity='0'; t.style.transform='translateY(-6px)'; t.style.transition='all .25s ease'; }catch{} }, ms-300);
-    setTimeout(()=>{ try{ t.remove(); if(wrap.childElementCount===0) wrap.remove(); }catch{} }, ms);
-  }catch{}
+    requestAnimationFrame(()=>{ t.style.opacity='1'; });
+    setTimeout(()=>{ 
+      try{
+        t.style.opacity='0';
+        setTimeout(()=>{ try{ t.remove(); if(wrap && !wrap.children.length) wrap.remove(); }catch(e){} }, 350);
+      }catch(e){}
+    }, ms);
+  }catch(e){
+    // en kötü ihtimalle sessiz geç
+    console.warn('Toast gösterilemedi:', e);
+  }
 }
+const fmtDate = (v)=> { if(!v) return "-"; const d=v instanceof Date?v:new Date(v); return d.toLocaleDateString('tr-TR',{year:'numeric',month:'short',day:'numeric'}); };
 
 function setInputValue(form, selector, value){
   if(!form) return;
@@ -783,24 +792,22 @@ qs('#formResident')?.addEventListener('submit', async (e)=>{
   e.preventDefault();
   if(currentRole!=='admin'){ alert('Sadece yönetici işlem yapabilir.'); return; }
   const formObj = Object.fromEntries(new FormData(e.target).entries());
-
-  // Edit sırasında isActive zorla true yapılmasın; mevcut durum korunsun.
+  const moveInISO = new Date().toISOString();
   const payload = {
     ...formObj,
     status: statusToEN(formObj.status),
+    // Yeni kayıtta varsayılan aktif; düzenlemede mevcut durum korunacak
+    isActive: (editingResidentId ? undefined : true),
+    moveInDate: (editingResidentId ? undefined : moveInISO)
   };
-  const moveInISO = new Date().toISOString();
-
   try{
     if(editingResidentId){
+      // undefined alanları yazma
+      Object.keys(payload).forEach(k=> (payload[k]===undefined) && delete payload[k]);
       await updateResident(editingResidentId, payload);
     }else{
-      payload.isActive = true;
-      payload.moveInDate = moveInISO;
-
       const res = await addResident(payload);
-
-      // Eğer Aidat/Ayarlamalar > "Yeni Sakin Ata" ile geldiysek: aynı dairedeki önceki aktif sakin(ler)i pasife çek
+      // Eğer fees sayfasından "Yeni Sakin Ata" ile geldiysek, aynı dairedeki önceki aktif sakin(ler)i pasife çek
       if(assignFlatOnSave){
         const flat = String(assignFlatOnSave).trim();
         const closedCount = await deactivateActiveResidentsForFlat(flat, res.id, moveInISO);
@@ -809,20 +816,14 @@ qs('#formResident')?.addEventListener('submit', async (e)=>{
         if(closedCount > 0){
           showToast(`Daire ${flat} için önceki aktif sakin pasife alındı.`, 'success');
         }else{
-          // Önceden aktif yoksa da bilgi verelim (sessiz de geçilebilir)
           showToast(`Daire ${flat} için yeni sakin atandı.`, 'info');
         }
       }else{
         showToast('Sakin eklendi.', 'success');
       }
-    }
-
     closeModals(); e.target.reset(); editingResidentId = null;
     await renderResidentsTable(); await renderDashboard();
-  }catch(err){
-    console.error(err);
-    alert('Kaydedilemedi: ' + (err?.message||'Bilinmeyen hata'));
-  }
+  }catch(err){ console.error(err); alert('Kaydedilemedi: ' + (err?.message||'Bilinmeyen hata')); }
 });
 
 async function deactivateActiveResidentsForFlat(flatNo, newId, moveInISO){
