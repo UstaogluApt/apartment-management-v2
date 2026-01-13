@@ -69,7 +69,15 @@
 </section>
 <section class="hidden" id="residents">
 <div class="panel">
-<div class="panel-head"><div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap"><h2 style="margin:0">👥 Sakin Yönetimi</h2><div class="seg" id="residentFilterSeg" style="margin-left:8px"><button type="button" class="seg-btn active" data-filter="active">Aktif</button><button type="button" class="seg-btn" data-filter="inactive">Pasif</button><button type="button" class="seg-btn" data-filter="all">Tümü</button></div></div><button class="btn primary admin-only hidden" id="btnResidentAdd">➕ Sakin Ekle</button></div>
+<div class="panel-head"><h2>👥 Sakin Yönetimi</h2>
+  <div class="row-gap" style="margin-left:auto">
+    <select id="resFilter" class="input" title="Liste filtresi">
+      <option value="active" selected>Aktif Sakinler</option>
+      <option value="all">Tüm Kayıtlar</option>
+      <option value="inactive">Taşınan / Pasif</option>
+    </select>
+  </div>
+<button class="btn primary admin-only hidden" id="btnResidentAdd">➕ Sakin Ekle</button></div>
 <div class="table-container"><table class="tbl" id="resTbl">
 <thead><tr><th>Daire No</th><th>Ad Soyad</th><th>Telefon</th><th>E-posta</th><th>Durum</th><th>Plaka</th><th>İşlemler</th></tr></thead>
 <tbody id="resTbody"></tbody></table></div>
@@ -115,27 +123,6 @@
 <table class="tbl" id="repTbl"><thead id="repThead"></thead><tbody id="repTbody"></tbody><tfoot id="repTfoot"></tfoot></table>
 </div>
 </div>
-
-<div class="panel mt" id="extraReportPanel">
-  <div class="panel-head">
-    <h3>🧾 Ek Ödeme Raporu</h3>
-    <div class="row-gap" style="flex-wrap:wrap">
-      <select id="extraRepYear"></select>
-      <select id="extraRepFee"></select>
-      <button class="btn outline admin-only" id="extraRepExportCSV">CSV</button>
-    </div>
-  </div>
-  <div class="muted" style="margin-bottom:8px">Seçtiğiniz ek ödeme kalemi için daire bazlı borç/ödeme/kalan durumunu gösterir.</div>
-  <div class="table-container">
-    <table class="tbl" id="extraRepTbl">
-      <thead>
-        <tr><th>Daire</th><th>Borç (₺)</th><th>Ödenen (₺)</th><th>Kalan (₺)</th><th>Durum</th></tr>
-      </thead>
-      <tbody id="extraRepTbody"></tbody>
-    </table>
-  </div>
-</div>
-
 </section>
 <section class="hidden" id="fees">
 <div class="panel">
@@ -174,7 +161,6 @@
 <div class="row-gap"><label style="flex:1">Daire No<input name="flatNo" required=""/></label><label style="flex:1">Ad Soyad<input name="name" required=""/></label></div>
 <div class="row-gap"><label style="flex:1">Telefon<input name="phone" type="tel"/></label><label style="flex:1">E-posta<input name="email" type="email"/></label></div>
 <div class="row-gap"><label style="flex:1">Durum<select name="status"><option value="">Seçiniz</option><option value="Owner">Ev Sahibi</option><option value="Tenant">Kiracı</option></select></label><label style="flex:1">Plaka<input name="licensePlate" placeholder="34ABC123"/></label></div>
-<div class="row-gap"><label style="flex:1" class="inline-check"><input type="checkbox" name="isActive" checked> Aktif</label><label style="flex:1">Çıkış Tarihi (opsiyonel)<input name="moveOutDate" type="date"/></label></div>
 <div class="modal-actions"><button class="btn" data-close="" type="button">İptal</button><button class="btn primary">Kaydet</button></div>
 </form>
 </div></div>
@@ -182,87 +168,14 @@
 <div class="modal hidden" id="modalPayment"><div class="modal-card">
 <div class="modal-head"><h3>Ödeme Ekle</h3><button class="icon-close" data-close="">✖</button></div>
 <form class="form" id="formPayment">
-  <label>Daire No<input name="flatNo" required="" placeholder="1"/></label>
-  <label>Ödeyen Kişi (opsiyonel)<input name="payerName" placeholder="Veli / Komşu / Akraba..."/></label>
-  <label>Ay (örn. 2025-08)<input name="month" placeholder="YYYY-MM" required=""/></label>
-  <label>Tutar (₺)<input name="amount" required="" step="0.01" type="number"/></label>
-  <label>Tarih<input name="date" type="date"/></label>
-  <!-- Tür (Aidat / Ek Ödeme) + Sakin Select + Açıklama alanları script.js tarafından eklenecek -->
-  <div class="modal-actions"><button class="btn" data-close="" type="button">İptal</button><button class="btn primary">Kaydet</button></div>
+<label>Ödeyen (Sakin adı)<input name="residentName" required=""/></label>
+<label>Ay (örn. 2025-08)<input name="month" placeholder="YYYY-MM" required=""/></label>
+<label>Tutar (₺)<input name="amount" required="" step="0.01" type="number"/></label>
+<label>Tarih<input name="date" type="date"/></label>
+<div class="modal-actions"><button class="btn" data-close="" type="button">İptal</button><button class="btn primary">Kaydet</button></div>
 </form>
 </div></div>
-
-<!-- Extra Fee Modal -->
-<div class="modal hidden" id="modalExtraFee"><div class="modal-card" style="max-width:620px">
-  <div class="modal-head"><h3 id="extraFeeModalTitle">Ek Ödeme Tanımla</h3><button class="icon-close" data-close="">✖</button></div>
-  <form class="form" id="formExtraFee">
-    <div class="row-gap">
-      <label style="flex:1">Yıl
-        <input name="year" type="number" min="2000" max="2100" required />
-      </label>
-      <label style="flex:2">Başlık
-        <input name="title" required placeholder="Örn. Asansör Revizyonu" />
-      </label>
-    </div>
-    <div class="row-gap">
-      <label style="flex:1">Son Ödeme Tarihi (opsiyonel)
-        <input name="dueDate" type="date" />
-      </label>
-      <label style="flex:2">Not (opsiyonel)
-        <input name="note" placeholder="Tek seferlik / açıklama..." />
-      </label>
-    </div>
-    <div class="modal-actions">
-      <button class="btn" data-close="" type="button">İptal</button>
-      <button class="btn primary">Kaydet</button>
-    </div>
-  </form>
-</div></div>
-
-<!-- Extra Fee Dues Modal -->
-<div class="modal hidden" id="modalExtraDues"><div class="modal-card" style="max-width:860px">
-  <div class="modal-head">
-    <h3 id="extraDuesTitle">Daire Bazlı Tutarlar</h3>
-    <button class="icon-close" data-close="">✖</button>
-  </div>
-  <div class="row-gap" style="justify-content:space-between;align-items:center;margin-bottom:10px">
-    <div class="muted" id="extraDuesHint">Her daire için ek ödeme tutarını girin. Boş bırakılanlar 0 kabul edilir.</div>
-    <div class="row-gap">
-      <input id="extraDuesBulk" class="pill" type="number" min="0" step="0.01" placeholder="Hepsine aynı (₺)" style="width:170px" />
-      <button class="btn outline admin-only" id="extraDuesApplyAll" type="button">Uygula</button>
-      <button class="btn primary admin-only" id="extraDuesSave" type="button">Kaydet</button>
-    </div>
-  </div>
-  <div class="table-container">
-    <table class="tbl">
-      <thead>
-        <tr>
-          <th style="width:120px">Daire</th>
-          <th>Aktif Sakin</th>
-          <th style="width:220px">Tutar (₺)</th>
-        </tr>
-      </thead>
-      <tbody id="extraDuesTbody"></tbody>
-    </table>
-  </div>
-</div></div>
-
-<!-- Extra Fee Payment Modal -->
-<div class="modal hidden" id="modalExtraPay"><div class="modal-card" style="max-width:560px">
-  <div class="modal-head"><h3 id="extraPayTitle">Ek Ödeme Ödemesi</h3><button class="icon-close" data-close="">✖</button></div>
-  <form class="form" id="formExtraPay">
-    <input type="hidden" name="extraId" />
-    <input type="hidden" name="year" />
-    <label>Daire No<input name="flatNo" required placeholder="1" /></label>
-    <label>Ödeyen Kişi (opsiyonel)<input name="payerName" placeholder="Veli / Komşu / Akraba..." /></label>
-    <label>Tutar (₺)<input name="amount" required step="0.01" type="number"/></label>
-    <label>Tarih<input name="date" type="date"/></label>
-    <div class="modal-actions"><button class="btn" data-close="" type="button">İptal</button><button class="btn primary">Kaydet</button></div>
-  </form>
-</div></div>
-
 <!-- Expense Modal -->
-
 <div class="modal hidden" id="modalExpense"><div class="modal-card">
 <div class="modal-head"><h3>Gider</h3><button class="icon-close" data-close="">✖</button></div>
 <form class="form" id="formExpense">

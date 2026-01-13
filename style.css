@@ -191,12 +191,6 @@ input,select,textarea{width:100%;padding:10px 12px;border:1px solid var(--border
 }
 
 
-/* Segmented control */
-.seg{display:inline-flex;border:1px solid var(--border,#e5e7eb);border-radius:999px;overflow:hidden;background:#fff}
-.seg-btn{appearance:none;border:0;background:transparent;padding:8px 12px;font-weight:700;cursor:pointer;color:var(--text,#0f172a)}
-.seg-btn:hover{background:rgba(15,23,42,.04)}
-.seg-btn.active{background:rgba(2,132,199,.12);color:#075985}
-.inline-check{display:flex;align-items:center;gap:8px;padding:10px 12px;border:1px solid var(--border,#e5e7eb);border-radius:12px;background:#fff}
-.inline-check input{width:18px;height:18px}
-.badge.active{background:#dcfce7;border-color:#bbf7d0;color:#166534}
-.badge.inactive{background:#fee2e2;border-color:#fecaca;color:#991b1b}
+/* ==== Sakin Aktif/Pasif Rozetleri ==== */
+.badge.active{background:#e7f7ee;color:#0f6a3c;border:1px solid #bfead0;}
+.badge.inactive{background:#f3f4f6;color:#374151;border:1px solid #e5e7eb;}
