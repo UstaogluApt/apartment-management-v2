@@ -1,0 +1,191 @@
+/* ===== Base ===== */
+:root{
+  --bg1:#6a5ae0;
+  --bg2:#9a6ee0;
+  --bg3:#f5f7fb;
+  --text:#121826;
+  --card:#ffffff;
+  --muted:#6b7280;
+  --border:#e5e7eb;
+  --radius:16px;
+  --shadow:0 10px 30px rgba(31,41,55,.12);
+}
+*{box-sizing:border-box}
+html,body{height:100%}
+body{margin:0;font-family:Inter,ui-sans-serif,system-ui,Segoe UI,Roboto,Arial;background:linear-gradient(135deg,var(--bg1),var(--bg2)) fixed;}
+
+/* ===== Layout ===== */
+.layout{display:grid;grid-template-columns:280px 1fr;min-height:100vh}
+.sidebar{background:linear-gradient(180deg,#5f52dd,#8e63df);padding:20px;color:#fff;display:flex;flex-direction:column;gap:18px}
+.brand{display:flex;gap:12px;align-items:center;background:rgba(255,255,255,.1);padding:14px;border-radius:14px}
+.logo{font-size:28px}
+.brand-text h1{font-size:18px;margin:0 0 4px}
+.brand-text p{margin:0;color:#eef;opacity:.9;font-size:12px}
+.nav{display:flex;flex-direction:column;gap:10px;margin-top:8px}
+.nav-btn{all:unset;display:block;background:rgba(255,255,255,.15);padding:10px 14px;border-radius:12px;cursor:pointer}
+.nav-btn:hover,.nav-btn.active{background:#fff;color:var(--text)}
+.sidebar-foot{margin-top:auto;text-align:center;opacity:.8}
+
+.content{background:var(--bg3);padding:24px 28px;position:relative}
+.topbar{display:flex;justify-content:flex-end;align-items:center;margin-bottom:16px}
+.user-box{display:flex;align-items:center;gap:10px}
+.pill{padding:6px 10px;border-radius:999px;background:#eef;color:#333;border:1px solid #dde3f0}
+.pill-admin{background:#e7f3ff;border-color:#cfe6ff;color:#1756a9}
+
+/* ===== Panels & Cards ===== */
+.panel{background:var(--card);border:1px solid var(--border);border-radius:20px;padding:18px 18px 22px;box-shadow:var(--shadow);}
+.panel-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px}
+.mt{margin-top:16px}
+.card{background:var(--card);border-radius:20px;border:1px solid var(--border);box-shadow:var(--shadow);padding:18px}
+
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:16px;margin:12px 0 8px}
+.stats .card{background:linear-gradient(135deg,#7a66e2,#b47ae5);color:#fff}
+.stats .card h3{margin:0 0 6px;font-weight:700}
+.stats .card p{margin:0}
+
+/* ===== Lists ===== */
+.list > div,
+.announce-list > div{
+  background:#fff;border:1px solid var(--border);border-radius:14px;padding:12px 14px;margin:8px 0;
+  display:flex;gap:12px;align-items:center;justify-content:space-between;box-shadow:var(--shadow);
+}
+.list .meta,.announce-list .meta{color:var(--muted);font-size:12px}
+.announce-list { display: grid; gap: 12px; }
+.ann-card{ background:#fff; border:1px solid var(--border); border-radius:14px; padding:14px; box-shadow:var(--shadow); }
+.ann-card.info{ border-left:6px solid #60a5fa; background:#f0f6ff; }
+.ann-card.success{ border-left:6px solid #34d399; background:#effef6; }
+.ann-card.warning{ border-left:6px solid #f59e0b; background:#fff7ed; }
+.ann-card.danger{ border-left:6px solid #ef4444; background:#fff1f2; }
+.ann-top{ display:flex; align-items:center; justify-content:space-between; margin-bottom:6px; }
+.ann-title{ font-weight:700; }
+.ann-body{ margin:6px 0 10px; }
+.ann-actions{ display:flex; gap:8px; }
+.btn.danger{ background:#ef4444; color:#fff; }
+
+/* ===== Forms & Buttons ===== */
+.form label{display:block;margin-bottom:12px;color:var(--text);font-weight:600}
+input,select,textarea{width:100%;padding:10px 12px;border:1px solid var(--border);border-radius:12px;background:#fff;color:#var(--text)}
+.btn{border:none;border-radius:12px;padding:10px 14px;font-weight:700;cursor:pointer}
+.btn.small{padding:8px 12px}
+.btn.primary{background:#5f52dd;color:#fff}
+.btn.outline{background:transparent;border:1px solid #cfd6e6;color:#334}
+.btn.gradient{background:linear-gradient(135deg,#6a5ae0,#9a6ee0);color:#fff}
+.btn:hover{filter:brightness(.98)}
+.error{color:#e11d48;min-height:20px}
+.muted{color:var(--muted)}
+.hidden{display:none !important}
+
+/* ===== Modals ===== */
+.modal-backdrop{position:fixed;inset:0;background:rgba(0,0,0,.35);backdrop-filter:blur(2px);z-index:40}
+.modal{position:fixed;inset:0;display:grid;place-items:center;z-index:50}
+.modal-card{width:min(720px,92vw);background:#fff;border:1px solid var(--border);border-radius:18px;box-shadow:var(--shadow);padding:18px}
+.modal-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px}
+.icon-close{all:unset;cursor:pointer;font-size:18px;line-height:1;padding:6px 8px;border-radius:10px}
+.icon-close:hover{background:#f2f4f8}
+.modal-actions{display:flex;justify-content:flex-end;gap:10px;margin-top:10px}
+
+/* ===== Table (Sakinler) ===== */
+.table-container{overflow-x:auto}
+.tbl{width:100%;border-collapse:collapse;background:#fff;border-radius:12px;overflow:hidden;box-shadow:var(--shadow);border:1px solid var(--border)}
+.tbl th{padding:12px 14px;text-align:left;color:#fff;font-weight:700;background:linear-gradient(135deg,#667eea,#764ba2)}
+.tbl td{padding:12px 14px;border-bottom:1px solid var(--border);color:var(--text)}
+.tbl tr:hover td{background:#f3f4ff}
+.tbl td:last-child{white-space:nowrap}
+
+/* ===== Announcement color variants (fallback old list style) ===== */
+.announce-list > div.info{border-left-color:#60a5fa;background:#f0f6ff}
+.announce-list > div.success{border-left-color:#34d399;background:#effef6}
+.announce-list > div.warning{border-left-color:#f59e0b;background:#fff7ed}
+.announce-list > div.danger{border-left-color:#ef4444;background:#fff1f2}
+.announce-list > div.neutral{border-left-color:#94a3b8;background:#f8fafc}
+
+/* ===== Utilities ===== */
+.row-gap{display:flex;gap:10px}
+
+/* =================== Mobile =================== */
+@media (max-width: 900px){
+  /* 1) Single column layout */
+  .layout{grid-template-columns:1fr;min-height:100vh;}
+
+  /* 2) Sidebar scrolls with page; compact spacing */
+  .sidebar{
+    position: static !important;
+    top: auto !important;
+    bottom: auto !important;
+    left: auto !important;
+    right: auto !important;
+    z-index: auto !important;
+    border-bottom-left-radius: 0;
+    border-bottom-right-radius: 0;
+    padding: 12px 12px;
+    gap: 10px;
+  }
+
+  .brand{ padding:10px; border-radius:12px; }
+  .logo{ font-size:24px; }
+  .brand-text h1{ font-size:16px; }
+  .brand-text p{ font-size:11px; }
+
+  /* 3) NAV: grid layout to fit the screen nicely */
+  .nav{
+    display:grid;
+    grid-template-columns:repeat(auto-fit,minmax(120px,1fr));
+    gap:10px;
+    margin-top:6px;
+  }
+  .nav-btn{
+    all:unset;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    width:100%;
+    min-height:48px;
+    padding:10px 12px;
+    border-radius:12px;
+    background:rgba(255,255,255,.15);
+    color:#fff;
+    font-size:14px;
+    font-weight:700;
+    line-height:1.2;
+    text-align:center;
+    border:1px solid rgba(255,255,255,.25);
+    /* prevent overly wide/ugly buttons */
+    white-space:nowrap;
+    overflow:hidden;
+    text-overflow:ellipsis;
+  }
+  .nav-btn:hover,.nav-btn.active{background:#fff;color:var(--text)}
+
+  /* 4) Content padding smaller on mobile */
+  .content{ padding:16px; }
+
+  /* 5) Topbar spacing tweaks */
+  .topbar{ margin-bottom:12px; }
+}
+
+/* ==== Aidat Durum Rozetleri ==== */
+.badge{display:inline-flex;align-items:center;justify-content:center;min-width:28px;padding:4px 8px;border-radius:999px;font-weight:700;border:1px solid var(--border,#e5e7eb);line-height:1}
+.badge.paid{background:#dcfce7;border-color:#bbf7d0;color:#166534}
+.badge.unpaid{background:#fee2e2;border-color:#fecaca;color:#991b1b}
+.badge.partial{background:#fef9c3;border-color:#fde68a;color:#854d0e}
+.badge.undefined{background:#f1f5f9;border-color:#e2e8f0;color:#475569}
+
+/* Fallback: metin yazsa da sembol göster */
+.badge.paid, .badge.unpaid, .badge.partial, .badge.undefined{ font-size:0; line-height:1; }
+.badge.paid::after{ content:"✓"; font-size:12px; }
+.badge.unpaid::after{ content:"x"; font-size:12px; }
+.badge.partial::after{ content:"o"; font-size:12px; }
+.badge.undefined::after{ content:"-"; font-size:12px; }
+
+/* ==== Aidat Hücre Arka Planları ==== */
+.aidat-cell{ text-align:center; }
+.aidat-cell.paid{ background:#dcfce7; }
+.aidat-cell.unpaid{ background:#fee2e2; }
+.aidat-cell.partial{ background:#fef9c3; }
+.aidat-cell.undefined{ background:#f1f5f9; }
+
+/* Defensive: ensure mobile nav never fixed/sticky due to older caches */
+@media (max-width: 900px){
+  .layout .sidebar,
+  aside.sidebar{ position: static !important; }
+}
