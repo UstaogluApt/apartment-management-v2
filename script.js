@@ -298,6 +298,9 @@ async function renderReportsTable(){
   });
 
   const feesMap = await getYearFeesMap(year);
+  const extraCfg = await getExtraPaymentForYear(year);
+  const extraDuePerFlat = +((extraCfg&&extraCfg.amount)||0);
+  const extraTitle = (extraCfg&&extraCfg.title)||'Ek Ödeme';
   const flats   = collectFlatsFromResidentsAndFees(residents, feesMap);
   const payIdx  = buildPaymentsIndex(payments);   // Aidat ödemeleri
   const extraIdx= buildExtrasIndex(payments);     // Ek ödemeler (tarihe göre)
@@ -307,14 +310,16 @@ async function renderReportsTable(){
       <th>Daire</th>
       ${MONTHS_TR.map((m)=>`<th>${m}</th>`).join('')}
       <th>Toplam Aidat</th>
-      <th>Toplam Ödeme</th>
-      <th>Ek Ödeme</th>
-      <th>Fark</th>
+      <th>Aidat Ödeme</th>
+      <th>Ek Ödeme Borç</th>
+      <th>Ek Ödeme Ödeme</th>
+      <th>Genel Fark</th>
     </tr>`;
 
-  let sumDueAll=0, sumPaidAll=0, sumExtraAll=0;
+  let sumDueAll=0, sumPaidAll=0, sumExtraAll=0, sumExtraDueAll=0;
   const rowsHTML = flats.map(f=>{
     let rowDue=0, rowPaid=0, rowExtra=0;
+    const rowExtraDue = extraDuePerFlat;
     const tds = MONTHS_TR.map((_,i)=>{
       const mm = String(i+1).padStart(2,'0');
       const due = ((feesMap[f]||{})[mm])||0;
@@ -332,12 +337,13 @@ async function renderReportsTable(){
       return `<td class="aidat-cell ${cls}" title="${tip.replace(/"/g,'&quot;')}"><span class="badge ${cls}">${label}</span></td>`;
     }).join('');
 
-    sumDueAll += rowDue; sumPaidAll += rowPaid; sumExtraAll += rowExtra;
-    const diff = rowPaid - rowDue;
+    sumDueAll += rowDue; sumPaidAll += rowPaid; sumExtraAll += rowExtra; sumExtraDueAll += rowExtraDue;
+    const diff = (rowPaid + rowExtra) - (rowDue + rowExtraDue);
     return `<tr>
       <td>${f}</td>${tds}
       <td>${fmtTRY.format(rowDue)}</td>
       <td>${fmtTRY.format(rowPaid)}</td>
+      <td title="${(extraTitle||"Ek Ödeme").replace(/"/g,"&quot;")}">${fmtTRY.format(rowExtraDue)}</td>
       <td>${fmtTRY.format(rowExtra)}</td>
       <td style="font-weight:700;${diff<0?'color:#991b1b':diff>0?'color:#166534':''}">${fmtTRY.format(diff)}</td>
     </tr>`;
@@ -345,13 +351,14 @@ async function renderReportsTable(){
 
   tbody.innerHTML = rowsHTML || `<tr><td colspan="18" style="text-align:center;color:#777;padding:16px">Henüz veri yok</td></tr>`;
 
-  const diffAll = sumPaidAll - sumDueAll;
+  const diffAll = (sumPaidAll + sumExtraAll) - (sumDueAll + sumExtraDueAll);
   tfoot.innerHTML = `
     <tr>
       <td style="font-weight:700">Genel Toplam</td>
       ${MONTHS_TR.map(()=>'<td></td>').join('')}
       <td style="font-weight:700">${fmtTRY.format(sumDueAll)}</td>
       <td style="font-weight:700">${fmtTRY.format(sumPaidAll)}</td>
+      <td style="font-weight:700">${fmtTRY.format(sumExtraDueAll)}</td>
       <td style="font-weight:700">${fmtTRY.format(sumExtraAll)}</td>
       <td style="font-weight:700;${diffAll<0?'color:#991b1b':diffAll>0?'color:#166534':''}">${fmtTRY.format(diffAll)}</td>
     </tr>`;
@@ -384,6 +391,9 @@ async function generateFlatAnnualPDF(){
   payments.forEach(r=>{ if(!r.flatNo && r.residentName){ const f = nameToFlat.get(r.residentName.trim().toLowerCase()); if(f) r._derivedFlatNo = f; } });
 
   const feesMap = await getYearFeesMap(year);
+  const extraCfg = await getExtraPaymentForYear(year);
+  const extraDue = +((extraCfg&&extraCfg.amount)||0);
+  const extraTitle = (extraCfg&&extraCfg.title)||'Ek Ödeme';
   const payIdx  = buildPaymentsIndex(payments);
   const extraIdx= buildExtrasIndex(payments);
 
@@ -409,7 +419,7 @@ async function generateFlatAnnualPDF(){
     content: [
       {text:`Yıllık Aidat Cetveli — Daire ${flat} — ${year}`, style:'header'},
       {table:{widths:['*','*','*','*','*'], body}, layout:'lightHorizontalLines', margin:[0,10,0,10]},
-      {text:`Toplam Aidat: ${fmtTRY.format(totalDue)}    Toplam Ödeme: ${fmtTRY.format(totalPaid)}    Toplam Ek: ${fmtTRY.format(totalExtra)}    Fark: ${fmtTRY.format(totalPaid-totalDue)}`, margin:[0,6,0,0]}
+      {text:`Toplam Aidat: ${fmtTRY.format(totalDue)}    Toplam Ödeme: ${fmtTRY.format(totalPaid)}    Toplam Ek: ${fmtTRY.format(totalExtra)}    Genel Fark: ${fmtTRY.format((totalPaid+totalExtra)-(totalDue+extraDue))}`, margin:[0,6,0,0]}
     ],
     defaultStyle:{ font:'Roboto' },
     styles:{ header:{fontSize:14,bold:true,margin:[0,0,0,8]} }
@@ -522,7 +532,29 @@ async function deleteAnnouncement(id){ if(currentRole!=='admin') throw new Error
 
 /* ===== Fees (Aidat) ===== */
 async function getFeesDoc(ym){ const r=doc(db,'fees',ym); const s=await getDoc(r); return s.exists()?{id:ym,...s.data()}:null; }
-async function setFeesDoc(ym,data){ if(currentRole!=='admin') throw new Error('Yetki yok'); const r=doc(db,'fees',ym); return setDoc(r,{ym, ...data, updatedAt:serverTimestamp(),updatedBy:currentUser?.uid||null},{merge:true}); }
+async function setFeesDoc(ym,data){ if(currentRole!=='admin') throw new Error('Yetki yok'); const r=doc(db,'fees',ym); return setDoc(r,{ym, ...data, updatedAt:serverTimestamp(),updatedBy:currentUser?.uid||null}
+
+/* ===== Extra Payments (Yıllık Ek Ödeme) ===== */
+async function getExtraPaymentDoc(year){
+  const id = String(year);
+  const r = doc(db,'extraPayments', id);
+  const s = await getDoc(r);
+  return s.exists() ? { id, ...s.data() } : null;
+}
+async function setExtraPaymentDoc(year, data){
+  if(currentRole!=='admin') throw new Error('Yetki yok');
+  const id = String(year);
+  await setDoc(
+    doc(db,'extraPayments', id),
+    { year: Number(year), ...data, updatedAt: serverTimestamp(), updatedBy: currentUser?.uid || null },
+    { merge: true }
+  );
+}
+async function getExtraPaymentForYear(year){
+  // returns {amount,title,description} or null
+  try{ return await getExtraPaymentDoc(year); }catch(e){ console.warn('extraPayments read failed', e); return null; }
+}
+,{merge:true}); }
 
 /* ===== Admin Info ===== */
 async function getAdminInfoDoc(){ const r=doc(db,'settings','adminInfo'); const s=await getDoc(r); return s.exists()?s.data():{}; }
@@ -559,6 +591,8 @@ qs('#exportExpenses')?.addEventListener('click',()=>exportCollection('expenses')
 async function renderDashboard(){
   const box=qs('#dashboardSummary'); if(!box) return; box.innerHTML="";
   const [res,pays,exps]=await Promise.all([listResidents(),listPayments(),listExpenses()]);
+  // ✅ Dashboard 'Toplam Sakin' sadece aktif sakinleri içerir
+  const activeRes = (res||[]).filter(isResidentActive);
   // ✅ Dashboard 'Toplam Sakin' sadece aktif sakinleri içerir
   const activeRes = (res||[]).filter(isResidentActive);
   const totalP=pays.reduce((s,p)=>s+(+p.amount||0),0);
@@ -1603,6 +1637,21 @@ function feesToolbarHTML(){
       </div>
     </div>
   </div>
+
+  <div class="panel" style="margin-top:14px">
+    <div class="panel-head">
+      <h3>➕ Yıllık Ek Ödeme</h3>
+      <div class="row-gap" style="align-items:center;flex-wrap:wrap">
+        <select id="extraYear" class="pill"></select>
+        <input id="extraTitle" class="pill" placeholder="Açıklama (örn: Asansör yenileme)" style="min-width:260px">
+        <input id="extraAmount" type="number" min="0" step="0.01" class="pill" placeholder="Daire başı yıllık (₺)" style="width:220px">
+        <button id="extraSave" class="btn primary admin-only">Kaydet</button>
+      </div>
+    </div>
+    <p class="muted" style="margin:6px 0 0">Bu tutar daire başı <b>yıllık</b> ek ödeme borcu olarak raporlara eklenir. Ek ödeme tahsilatları “Ödeme Ekle” ekranında <b>Tür: Ek Ödeme</b> seçilerek yapılır.</p>
+    <div id="extraInfo" class="muted" style="margin-top:10px"></div>
+  </div>
+
   <script>/* preselect current */</script>
   `;
 }
@@ -1622,6 +1671,45 @@ async function ensureFeesUI(){
     const now = new Date();
     qs('#feeYear').value = String(now.getFullYear());
     qs('#feeMonth').value = String(now.getMonth()+1).padStart(2,'0');
+
+    // Extra payments UI
+    const extraYearSel = qs('#extraYear');
+    if(extraYearSel){
+      extraYearSel.innerHTML = yearsOptionsHTML(9);
+      extraYearSel.value = String(now.getFullYear());
+      const loadExtraUI = async ()=>{
+        const y = extraYearSel.value;
+        const docx = await getExtraPaymentForYear(y);
+        qs('#extraTitle').value = (docx?.title || '');
+        qs('#extraAmount').value = (docx?.amount ?? '');
+        const info = qs('#extraInfo');
+        if(info){
+          if(docx && (docx.amount || docx.title || docx.description)){
+            info.innerHTML = `Kayıtlı: <b>${y}</b> — ${docx.title?docx.title+' — ':''}<b>${fmtTRY.format(+docx.amount||0)}</b> (daire başı / yıl)`;
+          }else{
+            info.innerHTML = `Bu yıl için ek ödeme tanımı yok.`;
+          }
+        }
+      };
+      extraYearSel.addEventListener('change', loadExtraUI);
+
+      qs('#extraSave')?.addEventListener('click', async ()=>{
+        if(currentRole!=='admin'){ alert('Yetki yok'); return; }
+        const y = extraYearSel.value;
+        const title = (qs('#extraTitle')?.value || '').trim();
+        const amount = +(qs('#extraAmount')?.value || 0);
+        if(!(amount>=0)){ alert('Tutar geçersiz'); return; }
+        await setExtraPaymentDoc(y, { title, amount });
+        await loadExtraUI();
+        alert('Ek ödeme kaydedildi.');
+        // reports page might be open
+        try{ await renderReportsTable(); }catch(e){}
+      });
+
+      // initial
+      loadExtraUI();
+    }
+
 
     const onChange = async ()=>{ await loadFeesForSelectors(); await renderFeesTable(); };
     qs('#feeYear')?.addEventListener('change', onChange);
