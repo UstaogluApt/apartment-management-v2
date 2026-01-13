@@ -93,23 +93,11 @@ async function getResidentsCached(){
 function invalidateResidentsCache(){ _residentsCache = null; }
 
 function isResidentActive(r){
-  // Daha uyumlu aktiflik kontrolü:
-  // 1) Yeni/veri farklı şemalar: status ('active'/'passive') veya active (true/false)
-  if (typeof r?.status === 'string'){
-    const s = r.status.trim().toLowerCase();
-    if (s === 'active' || s === 'aktif') return true;
-    if (s === 'passive' || s === 'pasif' || s === 'inactive') return false;
-  }
-  if (typeof r?.active === 'boolean') return r.active;
-
-  // 2) Mevcut şema: isActive + moveOutDate
   // Varsayılan: alan yoksa aktif kabul et.
-  if (r?.isActive === false) return false;
-
-  if (r?.moveOutDate) {
+  if (r.isActive === false) return false;
+  if (r.moveOutDate) {
     try{
       const d = new Date(r.moveOutDate);
-      // Geçerli bir tarihse: bugün/şimdi geçmişse pasif say
       if (!isNaN(d)) return d.getTime() > Date.now();
     }catch{}
     return false;
@@ -572,8 +560,7 @@ async function renderDashboard(){
   const box=qs('#dashboardSummary'); if(!box) return; box.innerHTML="";
   const [res,pays,exps]=await Promise.all([listResidents(),listPayments(),listExpenses()]);
   // ✅ Dashboard 'Toplam Sakin' sadece aktif sakinleri içerir
-  // ✅ Dashboard 'Toplam Sakin' sadece aktif sakinleri içerir
-const activeRes = (res||[]).filter(isResidentActive);
+  const activeRes = (res||[]).filter(isResidentActive);
   const totalP=pays.reduce((s,p)=>s+(+p.amount||0),0);
   const totalE=exps.reduce((s,p)=>s+(+p.amount||0),0);
   const items=[
