@@ -14,13 +14,13 @@ try{
 }catch{}
 /* ==================== Firebase Config ==================== */
 const firebaseConfig = {
-  apiKey: "AIzaSyCrb6EKsuaZunD5aIakwho07Sh_UXAceXc",
-  authDomain: "ustaogluaptyonetim.firebaseapp.com",
-  projectId: "ustaogluaptyonetim",
-  storageBucket: "ustaogluaptyonetim.firebasestorage.app",
-  messagingSenderId: "829433786147",
-  appId: "1:829433786147:web:05dd0c2d866767b2d52696",
-  measurementId: "G-TX1BERLB12"
+  apiKey: "AIzaSyAaDiuQmFW2SA1HGQ1G8CH7YmYC1w104lY",
+  authDomain: "apartment-management-v2.firebaseapp.com",
+  projectId: "apartment-management-v2",
+  storageBucket: "apartment-management-v2.firebasestorage.app",
+  messagingSenderId: "614034681672",
+  appId: "1:614034681672:web:0b7ad34ad970ea6178cd7d",
+  measurementId: "G-973B4DLE2T"
 };
 
 /* ==================== Init ==================== */
@@ -29,6 +29,29 @@ const auth = getAuth(app);
 // Ensure session-only persistence (logout when browser/Tab closes)
 (async()=>{ try{ await setPersistence(auth, browserSessionPersistence); }catch(e){ console.error('setPersistence failed', e); } })();
 const db = getFirestore(app);
+
+// Debug: expose connected Firebase project (helps diagnose invalid-credential)
+window.__fbProjectId = (app?.options?.projectId) || firebaseConfig.projectId;
+window.__fbAuthDomain = firebaseConfig.authDomain;
+try{
+  const loginView = document.getElementById('loginView');
+  if(loginView && !document.getElementById('fbProjectHint')){
+    const form = document.getElementById('loginForm');
+    const hint = document.createElement('div');
+    hint.id = 'fbProjectHint';
+    hint.className = 'muted';
+    hint.style.marginTop = '10px';
+    hint.style.fontSize = '12px';
+    hint.textContent = `Bağlı Firebase: ${window.__fbProjectId}`;
+    // put under the login form if possible
+    if(form && form.parentElement){
+      form.parentElement.appendChild(hint);
+    }else{
+      loginView.appendChild(hint);
+    }
+  }
+}catch{}
+
 
 /* ==================== Helpers ==================== */
 const qs  = (s) => document.querySelector(s);
@@ -163,7 +186,17 @@ loginForm?.addEventListener('submit', async (e)=>{ e.preventDefault(); loginErro
     window.__loginInProgress = false;
 
   }catch(err){
-    console.error(err); loginError.textContent = err?.message || "Giriş başarısız.";
+    console.error(err);
+    const code = err?.code || '';
+    if(code === 'auth/invalid-credential' || code === 'auth/wrong-password' || code === 'auth/user-not-found'){
+      loginError.textContent = 'E-posta veya şifre hatalı. (Doğru Firebase projesine bağlı olduğunuzu da kontrol edin.)';
+    }else if(code === 'auth/too-many-requests'){
+      loginError.textContent = 'Çok fazla deneme yapıldı. Bir süre sonra tekrar deneyin.';
+    }else if(code === 'auth/unauthorized-domain'){
+      loginError.textContent = 'Bu domain yetkili değil. Firebase > Auth > Authorized domains listesini kontrol edin.';
+    }else{
+      loginError.textContent = err?.message || 'Giriş başarısız.';
+    }
   }
 });
 qs('#btnLogout')?.addEventListener('click', async ()=>{ try{ await signOut(auth); }catch(e){ console.error(e); }});
@@ -248,7 +281,7 @@ function buildPaymentsIndex(payments){
   (payments||[]).forEach(p=>{
     const type = p.type || p.paymentType || 'Due';
     if(type !== 'Due') return;
-    const ym = (p.month||'').trim(); if(!/^\d{4}-\d{2}$/.test(ym)) return;
+    const ym = paymentPeriod(p); if(!/^\d{4}-\d{2}$/.test(ym)) return;
     const flat = String(p.flatNo || p._derivedFlatNo || '').trim(); if(!flat) return;
     const amount = +p.amount || 0;
     if(!idx[flat]) idx[flat]={};
@@ -282,11 +315,18 @@ async function renderReportsTable(){
   if(!thead||!tbody||!tfoot) return;
 
   const [residents, payments] = await Promise.all([getResidentsCached(), listPayments()]);
+  const idToFlat   = new Map(residents.map(r=>[r.id, String(r.flatNo||'')]));
   const nameToFlat = new Map(residents.map(r=>[(r.name||'').trim().toLowerCase(), String(r.flatNo||'')]));
   payments.forEach(r=>{
-    if(!r.flatNo && r.residentName){
-      const f = nameToFlat.get(r.residentName.trim().toLowerCase());
-      if(f) r._derivedFlatNo = f;
+    if(!r.flatNo){
+      if(r.residentId){
+        const f = idToFlat.get(r.residentId);
+        if(f) r._derivedFlatNo = f;
+      }
+      if(!r._derivedFlatNo && r.residentName){
+        const f2 = nameToFlat.get(r.residentName.trim().toLowerCase());
+        if(f2) r._derivedFlatNo = f2;
+      }
     }
   });
 
@@ -487,7 +527,6 @@ function showPage(id){
 }
 qs('#btnDashboard')?.addEventListener('click',()=>showPage('dashboard'));
 qs('#btnResidents')?.addEventListener('click',async ()=>{ showPage('residents'); await renderResidentsTable(); });
-qs('#resFilter')?.addEventListener('change', ()=> renderResidentsTable());
 qs('#btnPayments')?.addEventListener('click',async ()=>{ showPage('payments'); await ensurePaymentsUI(); await renderPaymentsTable(); });
 qs('#btnExpenses')?.addEventListener('click',async ()=>{ showPage('expenses'); await ensureExpensesUI(); await renderExpensesTable(); });
 qs('#btnReports')?.addEventListener('click',async ()=>{ showPage('reports'); await ensureReportsUI?.(); await renderReportsTable?.(); });
@@ -495,21 +534,8 @@ qs('#btnFees')?.addEventListener('click',async ()=>{ showPage('fees'); await ens
 
 /* ==================== Firestore wrappers ==================== */
 async function listResidents(){ const s=await getDocs(collection(db,'residents')); return s.docs.map(d=>({id:d.id,...d.data()})); }
-async function addResident(data){
-  data = data || {};
-  if(typeof data.isActive==="undefined") data.isActive = true;
- if(currentRole!=='admin') throw new Error('Yetki yok'); const res = await addDoc(collection(db,'residents'),{...data,createdAt:serverTimestamp(),createdBy:currentUser?.uid||null}); invalidateResidentsCache(); return res; }
-async function updateResident(id, data){
-  data = data || {};
- if(currentRole!=='admin') throw new Error('Yetki yok'); const r = await updateDoc(doc(db,'residents',id), data); 
-  try{
-    if(data.isActive===true){
-      const snap = await getDoc(doc(db,"residents",id));
-      const flatNo = (data.flatNo || (snap.exists()? (snap.data().flatNo||"") : "")).toString().trim();
-      if(flatNo) await deactivateOtherResidentsSameFlat(flatNo, id);
-    }
-  }catch(_e){}
-invalidateResidentsCache(); return r; }
+async function addResident(data){ if(currentRole!=='admin') throw new Error('Yetki yok'); const res = await addDoc(collection(db,'residents'),{...data,createdAt:serverTimestamp(),createdBy:currentUser?.uid||null}); invalidateResidentsCache(); return res; }
+async function updateResident(id, data){ if(currentRole!=='admin') throw new Error('Yetki yok'); const r = await updateDoc(doc(db,'residents',id), data); invalidateResidentsCache(); return r; }
 async function deleteResident(id){ if(currentRole!=='admin') throw new Error('Yetki yok'); const r = await deleteDoc(doc(db,'residents',id)); invalidateResidentsCache(); return r; }
 
 async function listPayments(){ const s=await getDocs(collection(db,'payments')); return s.docs.map(d=>({id:d.id,...d.data()})); }
@@ -669,104 +695,34 @@ qsa('.role-edit').forEach(btn=>{
 });
 
 /* ==================== Residents ==================== */
-async function deactivateOtherResidentsSameFlat(flatNo, exceptId){
-  try{
-    const q = await getDocs(collection(db,'residents'));
-    const docs = q.docs.map(d=>({id:d.id,...d.data()}))
-      .filter(r=>(''+(r.flatNo||'')).trim() === (''+flatNo).trim())
-      .filter(r=>r.id !== exceptId)
-      .filter(r=>r.isActive !== false); // active or missing
-    for(const r of docs){
-      try{ await updateDoc(doc(db,'residents',r.id), { isActive: false }); }catch(_){}
-    }
-  }catch(e){
-    console.warn('deactivateOtherResidentsSameFlat failed', e);
-  }
-}
-
 async function renderResidentsTable(){
   const tbody = qs('#resTbody'); if(!tbody) return;
-
-  const filter = (qs('#resFilter')?.value || 'active'); // active | all | inactive
-  let rows = await listResidents();
-
-  // Normalize isActive (missing => true for backward compatibility)
-  rows = rows.map(r => ({...r, isActive: (r.isActive === false ? false : true)}));
-
-  if(filter === 'active') rows = rows.filter(r=>r.isActive);
-  if(filter === 'inactive') rows = rows.filter(r=>!r.isActive);
-
+  const rows = await listResidents();
   rows.sort((a,b)=> (''+(a.flatNo||'')).localeCompare((''+(b.flatNo||'')), 'tr', {numeric:true}));
 
   const isAdminUI = currentRole==='admin';
-
   tbody.innerHTML = rows.map(r=>{
-    const badge = `<span class="badge ${r.isActive?'active':'inactive'}" style="margin-left:8px">${r.isActive?'Aktif':'Pasif'}</span>`;
-    const toggleBtn = !isAdminUI ? '' : (
-      r.isActive
-        ? `<button class="btn small outline" data-act="deactivate" data-id="${r.id}">⏸️ Pasife Al</button>`
-        : `<button class="btn small" data-act="activate" data-id="${r.id}">▶️ Aktif Yap</button>`
-    );
-
+    const activeBadge = '';
     return `
     <tr data-id="${r.id}">
       <td>${r.flatNo||''}</td>
-      <td>${r.name||''}${badge}</td>
+      <td>${r.name||''}</td>
       <td>${r.phone||''}</td>
       <td>${r.email||''}</td>
       <td>${statusToTR(r.status)}</td>
       <td>${r.licensePlate||''}</td>
       <td>
-        ${isAdminUI
-          ? `<div class="row-gap" style="flex-wrap:wrap">
-               <button class="btn small" data-edit="${r.id}">✏️ Düzenle</button>
-               <button class="btn small danger" data-del="${r.id}">🗑️ Sil</button>
-               ${toggleBtn}
-             </div>`
-          : `<span class="muted">—</span>`
-        }
+        ${isAdminUI ? `
+          <button type="button" class="btn small" data-edit="${r.id}">✏️ Düzenle</button>
+          <button type="button" class="btn small danger" data-del="${r.id}">🗑️ Sil</button>
+        ` : ''}
       </td>
     </tr>`;
-  }).join('');
+  }).join('') || `<tr><td colspan="7" style="text-align:center;color:#777;padding:16px">Henüz kayıt yok</td></tr>`;
 
-  // Bind row actions
-  if(isAdminUI){
-    qsa('#resTbody [data-edit]').forEach(btn=>{
-      btn.addEventListener('click', ()=> openResidentModalForEdit(btn.dataset.edit));
-    });
-    qsa('#resTbody [data-del]').forEach(btn=>{
-      btn.addEventListener('click', async ()=>{
-        const id = btn.dataset.del;
-        if(!confirm('Bu sakini silmek istiyor musunuz?')) return;
-        try{ await deleteResident(id); await renderResidentsTable(); toast('Silindi'); }
-        catch(e){ console.error(e); toast('Silinemedi'); }
-      });
-    });
-    qsa('#resTbody [data-act]').forEach(btn=>{
-      btn.addEventListener('click', async ()=>{
-        const id = btn.dataset.id;
-        const act = btn.dataset.act;
-        try{
-          const r = (await listResidents()).find(x=>x.id===id);
-          if(!r) return;
-          const flatNo = (r.flatNo||'').toString().trim();
-          if(act==='activate'){
-            // activate this resident and ensure only one active per flat
-            await updateResident(id, { isActive: true });
-            if(flatNo) await deactivateOtherResidentsSameFlat(flatNo, id);
-          }else{
-            await updateResident(id, { isActive: false });
-          }
-          toast('Güncellendi');
-          await renderResidentsTable();
-          // fees page uses active resident label
-          invalidateResidentsCache();
-        }catch(e){
-          console.error(e);
-          toast('İşlem başarısız');
-        }
-      });
-    });
+  if (!tbody.dataset.bound) {
+    tbody.addEventListener('click', onResidentsTableClick);
+    tbody.dataset.bound = '1';
   }
 }
 
@@ -989,16 +945,18 @@ async function onPaymentsTableClick(e){
       if (sel) sel.value = selectedId || '';
       const chosen = residents.find(r=>r.id===selectedId);
 
-      setInputValue(f, 'input[name="residentName"]', rec.residentName || chosen?.name || '');
       setInputValue(f, 'input[name="flatNo"]',       rec.flatNo || chosen?.flatNo || '');
       setInputValue(f, 'input[name="residentId"]',   selectedId || '');
+
+      const payer = rec.payerName || rec.residentName || chosen?.name || '';
+      setInputValue(f, 'input[name="payerName"]', payer);
 
       const typSel = qs('#paymentType');
       const typeVal = (rec.type || rec.paymentType || 'Due');
       if (typSel) typSel.value = typeVal;
 
-      const monthField = f.querySelector('[name="month"]');
-      if(monthField) monthField.value = typeVal === 'Extra' ? '' : (rec.month || '');
+      const perField = f.querySelector('[name="period"], [name="month"]');
+      if(perField) perField.value = typeVal === 'Extra' ? '' : (paymentPeriod(rec) || '');
 
       setInputValue(f, 'input[name="amount"]',      rec.amount ?? '');
       setInputValue(f, 'input[name="date"]',        rec.date ? toISODateInput(rec.date) : '');
@@ -1030,7 +988,7 @@ async function onPaymentsTableClick(e){
 async function enhancePaymentForm(){
   const f = qs('#formPayment'); if(!f) return;
 
-  // Tür
+  // Tür (Aidat / Ek Ödeme)
   if(!qs('#paymentType')){
     const lab = document.createElement('label');
     lab.innerHTML = `Ödeme Türü
@@ -1039,14 +997,21 @@ async function enhancePaymentForm(){
         <option value="Extra">Ek Ödeme</option>
       </select>`;
     f.prepend(lab);
-    qs('#paymentType').addEventListener('change', toggleMonthVisibility);
+    qs('#paymentType')?.addEventListener('change', toggleMonthVisibility);
   }
 
-  // Sakin seçimi
+  // residentId (opsiyonel) - raporlar için gerekmiyor ama filtreleme için faydalı
+  if(!qs('input[name="residentId"]')){
+    const hid = document.createElement('input');
+    hid.type = 'hidden'; hid.name = 'residentId';
+    f.appendChild(hid);
+  }
+
+  // Sakin seçimi (opsiyonel yardımcı alan): seçilirse daire no otomatik dolar
   if(!qs('#residentSelect')){
     const residents = await getResidentsCached();
     const lab = document.createElement('label');
-    lab.textContent = 'Sakin Seç';
+    lab.textContent = 'Sakin Seç (opsiyonel)';
     const sel = document.createElement('select');
     sel.id = 'residentSelect';
     sel.name = 'residentSelect';
@@ -1058,56 +1023,43 @@ async function enhancePaymentForm(){
         .join('');
     lab.appendChild(sel);
 
-    const rnLabel = f.querySelector('input[name="residentName"]')?.closest('label');
-    if(rnLabel && rnLabel.parentNode){
-      rnLabel.parentNode.insertBefore(lab, rnLabel);
-    } else {
+    // Daire no alanının hemen altına ekle (yoksa en üste)
+    const flatLabel = f.querySelector('input[name="flatNo"]')?.closest('label');
+    if(flatLabel && flatLabel.parentNode){
+      flatLabel.parentNode.insertBefore(lab, flatLabel.nextSibling);
+    }else{
       f.prepend(lab);
-    }
-
-    if(!qs('input[name="residentId"]')){
-      const hid = document.createElement('input');
-      hid.type = 'hidden'; hid.name = 'residentId';
-      f.appendChild(hid);
-    }
-
-    if(!qs('input[name="flatNo"]')){
-      const labFlat = document.createElement('label');
-      labFlat.innerHTML = `Daire No
-        <input name="flatNo" placeholder="örn. 12" />`;
-      if(rnLabel && rnLabel.nextSibling){
-        rnLabel.parentNode.insertBefore(labFlat, rnLabel.nextSibling);
-      } else {
-        f.appendChild(labFlat);
-      }
     }
 
     sel.addEventListener('change', ()=>{
       const v = sel.value;
       const res = (_residentsCache||[]).find(r=>r.id===v);
-      const nameInp = f.querySelector('input[name="residentName"]');
       const idInp   = f.querySelector('input[name="residentId"]');
       const flatInp = f.querySelector('input[name="flatNo"]');
+      const payerInp= f.querySelector('input[name="payerName"]');
       if(res){
-        nameInp && (nameInp.value = res.name || '');
         idInp && (idInp.value = res.id);
-        flatInp && (flatInp.value = res.flatNo || '');
+        flatInp && !flatInp.value && (flatInp.value = res.flatNo || '');
+        // Ödeyen boşsa, seçilen sakini öner
+        if(payerInp && !payerInp.value) payerInp.value = res.name || '';
       }else{
         idInp && (idInp.value = '');
       }
     });
   }
 
-  // Açıklama alanı
+  // Açıklama alanı (Ek ödeme için zorunlu)
   if(!qs('#paymentDescription')){
-    const monthWrapRef = f.querySelector('[name="month"]')?.closest('label');
+    const periodWrapRef =
+      f.querySelector('[name="period"]')?.closest('label') ||
+      f.querySelector('[name="month"]')?.closest('label');
     const descWrap = document.createElement('label');
     descWrap.id = 'paymentDescWrap';
     descWrap.style.display = 'none';
     descWrap.innerHTML = `Açıklama
       <input id="paymentDescription" name="description" placeholder="Örn. asansör tamiri / bağış / gecikme cezası" />`;
-    if(monthWrapRef && monthWrapRef.parentNode){
-      monthWrapRef.parentNode.insertBefore(descWrap, monthWrapRef.nextSibling);
+    if(periodWrapRef && periodWrapRef.parentNode){
+      periodWrapRef.parentNode.insertBefore(descWrap, periodWrapRef.nextSibling);
     } else {
       f.appendChild(descWrap);
     }
@@ -1116,7 +1068,49 @@ async function enhancePaymentForm(){
   toggleMonthVisibility();
 }
 
-// Ay/ Açıklama zorunluluğunu yönet
+function paymentPeriod(rec){
+  return ((rec?.month ?? rec?.period ?? '') + '').trim();
+
+async function migratePaymentsFillFlatNo(){
+  // Eski kayıtları otomatik toparla: flatNo yoksa residentId'den doldur.
+  if(currentRole!=='admin') return;
+  const flagKey = 'v2_migrated_flatno_2026_01';
+  if(localStorage.getItem(flagKey)) return;
+
+  try{
+    const [payments, residents] = await Promise.all([listPayments(), getResidentsCached()]);
+    const idToFlat = new Map(residents.map(r=>[r.id, String(r.flatNo||'').trim()]));
+    let updated = 0;
+
+    for(const p of (payments||[])){
+      const patch = {};
+      const flat = String(p.flatNo||'').trim();
+      if(!flat && p.residentId){
+        const f = idToFlat.get(p.residentId);
+        if(f) patch.flatNo = f;
+      }
+      // payerName yoksa residentName'den doldur (geriye dönük)
+      if(!p.payerName && p.residentName) patch.payerName = String(p.residentName||'').trim();
+      // period alanı yoksa month'tan doldur
+      if(!p.period && p.month) patch.period = String(p.month||'').trim();
+
+      if(Object.keys(patch).length){
+        await updatePayment(p.id, patch);
+        updated++;
+      }
+    }
+
+    localStorage.setItem(flagKey, '1');
+    if(updated){
+      console.log('V2 migration: payments patched =', updated);
+    }
+  }catch(err){
+    console.warn('V2 migration failed:', err);
+  }
+}
+}
+
+// Ay/ Açıklama zorunluluğunu yönet zorunluluğunu yönet
 function toggleMonthVisibility(){
   const f = qs('#formPayment'); if(!f) return;
   const typ = qs('#paymentType')?.value || 'Due';
@@ -1151,15 +1145,17 @@ function toggleMonthVisibility(){
 
 function matchPaymentFilters(rec, q, y, m, t, rid){
   let ok = true;
+  const per = paymentPeriod(rec);
   if(q){
-    const hay = `${rec.residentName||''} ${rec.flatNo||''} ${(rec.month||'')}
+    const payer = (rec.payerName || rec.residentName || '');
+    const hay = `${payer} ${rec.flatNo||''} ${per}
                  ${rec.description||''} ${typeToTR(rec.type||'Due')} ${fmtDate(rec.date)}`.toLowerCase();
     ok = hay.includes(q.toLowerCase());
   }
   if(ok && rid){ ok = (rec.residentId||'') === rid; }
   if(ok && t){ ok = (rec.type||'Due') === t; }
-  if(ok && y){ ok = (rec.month||'').slice(0,4) === y; }
-  if(ok && m){ ok = (rec.month||'').slice(5,7) === m; }
+  if(ok && y){ ok = per.slice(0,4) === y; }
+  if(ok && m){ ok = per.slice(5,7) === m; }
   return ok;
 }
 
@@ -1169,11 +1165,18 @@ async function renderPaymentsTable(){
   if(!tbody) return;
 
   const [rows, residents] = await Promise.all([listPayments(), getResidentsCached()]);
-  const nameToFlat = new Map(residents.map(r=>[(r.name||'').trim().toLowerCase(), r.flatNo || '']));
+  const idToFlat   = new Map(residents.map(r=>[r.id, String(r.flatNo||'')]));
+  const nameToFlat = new Map(residents.map(r=>[(r.name||'').trim().toLowerCase(), String(r.flatNo||'')]));
   rows.forEach(r=>{
-    if(!r.flatNo && r.residentName){
-      const f = nameToFlat.get(r.residentName.trim().toLowerCase());
-      if(f) r._derivedFlatNo = f;
+    if(!r.flatNo){
+      if(r.residentId){
+        const f = idToFlat.get(r.residentId);
+        if(f) r._derivedFlatNo = f;
+      }
+      if(!r._derivedFlatNo && r.residentName){
+        const f2 = nameToFlat.get(r.residentName.trim().toLowerCase());
+        if(f2) r._derivedFlatNo = f2;
+      }
     }
   });
 
@@ -1200,11 +1203,11 @@ async function renderPaymentsTable(){
     const amount = +r.amount || 0; total += amount;
     const flat = r.flatNo || r._derivedFlatNo || '';
     const typTR = typeToTR(r.type);
-    const monthText = r.type === 'Extra' ? '—' : (r.month || '');
+    const monthText = r.type === 'Extra' ? '—' : (paymentPeriod(r) || '');
     const descText  = r.description || '—';
     return `
       <tr data-id="${r.id}">
-        <td>${r.residentName||''}</td>
+        <td>${(r.payerName||r.residentName||'')}</td>
         <td>${flat||''}</td>
         <td>${typTR}</td>
         <td>${monthText}</td>
@@ -1245,11 +1248,11 @@ async function exportPaymentsCSV(){
   const data = filtered.map(r=>{
     const flat = r.flatNo || r._derivedFlatNo || '';
     const type = r.type==='Extra' ? 'Ek' : 'Aidat';
-    const month= r.type==='Extra' ? '' : (r.month||'');
+    const month= r.type==='Extra' ? '' : (paymentPeriod(r) || '');
     const desc = r.description || '';
     const amount = (+r.amount||0).toFixed(2);
     const date = r.date ? (new Date(r.date)).toISOString().slice(0,10) : '';
-    return [r.residentName||'', String(flat), type, month, desc, amount, date];
+    return [(r.payerName||r.residentName||''), String(flat), type, month, desc, amount, date];
   });
   const sep=','; const bom='\ufeff';
   const csv = ['sep=,', headers.join(sep), ...data.map(r=> r.map(v=>`"${trToAscii(String(v)).replace(/"/g,'""')}"`).join(sep))].join('\n');
@@ -1825,22 +1828,30 @@ adminForm?.addEventListener('submit', async (e) => {
 /* Ödeme formu */
 qs('#formPayment')?.addEventListener('submit', async (e)=>{
   e.preventDefault(); if(currentRole!=='admin') return;
-  const o=Object.fromEntries(new FormData(e.target).entries());
-  const date=o.date?new Date(o.date).toISOString():new Date().toISOString();
+  const o = Object.fromEntries(new FormData(e.target).entries());
+
+  const date = o.date ? new Date(o.date).toISOString() : new Date().toISOString();
   const type = o.type ? o.type : 'Due';
-  const monthVal = (type === 'Extra') ? '' : (o.month || '');
-  const descVal  = (type === 'Extra') ? (o.description || '') : '';
+
+  // Aidat/Ek ödeme dönemi: yeni formda "period" kullanıyoruz, eski kayıtlarda "month" olabilir
+  const periodVal = (type === 'Extra') ? '' : ((o.period || o.month || '').trim());
+  const descVal   = (type === 'Extra') ? ((o.description || '').trim()) : '';
+
+  const flatNo = (o.flatNo || '').trim();
 
   const payload = {
-    residentId: o.residentId || '',
-    residentName: o.residentName,
-    flatNo: o.flatNo || '',
+    residentId: (o.residentId || '').trim(), // opsiyonel
+    payerName: (o.payerName || '').trim(),
+    residentName: ((o.payerName || '')).trim(), // geriye dönük uyumluluk
+    flatNo,
     type,
-    month: monthVal,
+    month: periodVal,   // geriye dönük uyumluluk
+    period: periodVal,  // yeni alan
     description: descVal,
     amount: +(o.amount||0),
     date
   };
+
   try{
     if(editingPaymentId){
       await updatePayment(editingPaymentId, payload);
@@ -1891,6 +1902,7 @@ onAuthStateChanged(auth, async (user)=>{
   }
 
   currentRole = (await fetchRole(currentUser.uid)) ? 'admin' : 'user';
+  await migratePaymentsFillFlatNo();
   qsa('.admin-only').forEach(el=> currentRole==='admin'?show(el):hide(el));
   // Hide export buttons by id for non-admins
   if(currentRole!=='admin'){
