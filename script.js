@@ -108,6 +108,7 @@ function isResidentActive(r){
 /* ======= Aidat (fees) state ======= */
 let feesState = { ym: "", defaultAmount: 0, items: {} };
 let assignFlatOnSave = null; // fees'den yeni sakin atarken kullanılır
+let residentFilter = 'active'; // active | inactive | all
 
 /* ==================== Role Fetch ==================== */
 async function fetchRole(uid){
@@ -661,19 +662,44 @@ qsa('.role-edit').forEach(btn=>{
   });
 });
 
+
+// Residents filtre segmenti
+(function bindResidentFilter(){
+  const seg = qs('#residentFilterSeg');
+  if(!seg || seg.dataset.bound) return;
+  seg.addEventListener('click', (e)=>{
+    const btn = e.target.closest('button[data-filter]');
+    if(!btn) return;
+    residentFilter = btn.dataset.filter;
+    seg.querySelectorAll('button[data-filter]').forEach(b=>b.classList.toggle('active', b===btn));
+    renderResidentsTable();
+  });
+  seg.dataset.bound = '1';
+})();
+
 /* ==================== Residents ==================== */
 async function renderResidentsTable(){
   const tbody = qs('#resTbody'); if(!tbody) return;
-  const rows = await listResidents();
+  let rows = await listResidents();
   rows.sort((a,b)=> (''+(a.flatNo||'')).localeCompare((''+(b.flatNo||'')), 'tr', {numeric:true}));
+
+  // filtre
+  if(residentFilter === 'active') rows = rows.filter(isResidentActive);
+  else if(residentFilter === 'inactive') rows = rows.filter(r=>!isResidentActive(r));
 
   const isAdminUI = currentRole==='admin';
   tbody.innerHTML = rows.map(r=>{
-    const activeBadge = '';
+    const active = isResidentActive(r);
+    const badge = `<span class="badge ${active?'active':'inactive'}">${active?'Aktif':'Pasif'}</span>`;
+    const toggleBtn = isAdminUI ? (
+      active
+        ? `<button type="button" class="btn small outline" data-deactivate="${r.id}">⛔ Pasif Yap</button>`
+        : `<button type="button" class="btn small" data-activate="${r.id}">✅ Aktif Yap</button>`
+    ) : '';
     return `
     <tr data-id="${r.id}">
       <td>${r.flatNo||''}</td>
-      <td>${r.name||''}</td>
+      <td>${r.name||''} ${badge}</td>
       <td>${r.phone||''}</td>
       <td>${r.email||''}</td>
       <td>${statusToTR(r.status)}</td>
@@ -681,6 +707,7 @@ async function renderResidentsTable(){
       <td>
         ${isAdminUI ? `
           <button type="button" class="btn small" data-edit="${r.id}">✏️ Düzenle</button>
+          ${toggleBtn}
           <button type="button" class="btn small danger" data-del="${r.id}">🗑️ Sil</button>
         ` : ''}
       </td>
@@ -693,12 +720,33 @@ async function renderResidentsTable(){
   }
 }
 
-async function onResidentsTableClick(e){
+
+async function onResidentsTableClickasync function onResidentsTableClick(e){
   const editBtn = e.target.closest('button[data-edit]');
   const delBtn  = e.target.closest('button[data-del]');
-  if (!editBtn && !delBtn) return;
+  const actBtn  = e.target.closest('button[data-activate]');
+  const deactBtn= e.target.closest('button[data-deactivate]');
+  if (!editBtn && !delBtn && !actBtn && !deactBtn) return;
   e.preventDefault(); e.stopPropagation();
   if(currentRole!=='admin'){ alert('Sadece yönetici işlem yapabilir.'); return; }
+
+  if(actBtn){
+    const id = actBtn.getAttribute('data-activate');
+    if(confirm('Bu sakini tekrar AKTİF yapmak istiyor musunuz?')){
+      await updateResident(id, { isActive:true, moveOutDate: null });
+      await renderResidentsTable(); await renderDashboard();
+    }
+    return;
+  }
+  if(deactBtn){
+    const id = deactBtn.getAttribute('data-deactivate');
+    const outISO = new Date().toISOString();
+    if(confirm('Bu sakini PASİF yapmak istiyor musunuz?')){
+      await updateResident(id, { isActive:false, moveOutDate: outISO });
+      await renderResidentsTable(); await renderDashboard();
+    }
+    return;
+  }
 
   if(editBtn){
     try{
@@ -717,6 +765,10 @@ async function onResidentsTableClick(e){
       const statusSel = f.querySelector('select[name="status"]');
       if(statusSel) setSelectSmart(statusSel, statusToEN(rec.status));
       setInputValue(f, 'input[name="licensePlate"]', rec.licensePlate || '');
+      // aktif/pasif
+      const actCb = f.querySelector('input[name="isActive"]');
+      if(actCb) actCb.checked = isResidentActive(rec);
+      setInputValue(f, 'input[name="moveOutDate"]', toISODateInput(rec.moveOutDate));
 
       openModal(modalSel('#modalResident','#residentModal'));
     }catch(err){
@@ -758,20 +810,36 @@ qs('#formResident')?.addEventListener('submit', async (e)=>{
   e.preventDefault();
   if(currentRole!=='admin'){ alert('Sadece yönetici işlem yapabilir.'); return; }
   const formObj = Object.fromEntries(new FormData(e.target).entries());
+  const moveInISO = new Date().toISOString();
+  const isActiveVal = (formObj.isActive === 'on' || formObj.isActive === true || formObj.isActive === 'true');
   const payload = {
     ...formObj,
     status: statusToEN(formObj.status),
-    isActive: true,
-    moveInDate: new Date().toISOString()
+    isActive: isActiveVal,
+    moveInDate: formObj.moveInDate || moveInISO,
+    moveOutDate: formObj.moveOutDate || null
   };
+  // checkbox alanını formObj'den kaldır (firebase'e "on" gitmesin)
+  delete payload.isActive; // aşağıda set edilecek
+  payload.isActive = isActiveVal;
   try{
     if(editingResidentId){
       await updateResident(editingResidentId, payload);
+      if(payload.isActive){
+        try{ await deactivateActiveResidentsForFlat(String(payload.flatNo||'').trim(), editingResidentId, payload.moveInDate || new Date().toISOString()); }catch(err){ console.warn(err); }
+      }
     }else{
       const res = await addResident(payload);
-      // Eğer fees sayfasından "Yeni Sakin Ata" ile geldiysek, eski aktif sakini pasifle
+      // Aynı dairede sadece 1 aktif sakin kalsın
+      if(payload.isActive){
+        try{ await deactivateActiveResidentsForFlat(String(payload.flatNo||'').trim(), res.id, payload.moveInDate || new Date().toISOString()); }catch(err){ console.warn(err); }
+      }
+      // Eğer fees sayfasından "Yeni Sakin Ata" ile geldiysek, aynı dairedeki eski AKTİF sakini pasifle
       if(assignFlatOnSave){
-        // (removed move-out flow)
+        try{
+          const flatNo = String(assignFlatOnSave).trim();
+          await deactivateActiveResidentsForFlat(flatNo, res.id, payload.moveInDate || new Date().toISOString());
+        }catch(err){ console.warn('deactivateActiveResidentsForFlat failed', err); }
         assignFlatOnSave = null;
       }
     }
@@ -1678,6 +1746,9 @@ async function openAssignResidentForFlat(flat){
   form.reset();
   const title = qs('#residentModalTitle'); if(title) title.textContent = `Yeni Sakin Ata (Daire ${flat})`;
   setInputValue(form, 'input[name="flatNo"]', assignFlatOnSave);
+  const actCb = form.querySelector('input[name="isActive"]');
+  if(actCb) actCb.checked = true;
+  setInputValue(form, 'input[name="moveOutDate"]', '');
 
   editingResidentId = null;
   openModal(modalSel('#modalResident','#residentModal'));

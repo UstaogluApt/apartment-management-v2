@@ -69,7 +69,7 @@
 </section>
 <section class="hidden" id="residents">
 <div class="panel">
-<div class="panel-head"><h2>👥 Sakin Yönetimi</h2><button class="btn primary admin-only hidden" id="btnResidentAdd">➕ Sakin Ekle</button></div>
+<div class="panel-head"><div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap"><h2 style="margin:0">👥 Sakin Yönetimi</h2><div class="seg" id="residentFilterSeg" style="margin-left:8px"><button type="button" class="seg-btn active" data-filter="active">Aktif</button><button type="button" class="seg-btn" data-filter="inactive">Pasif</button><button type="button" class="seg-btn" data-filter="all">Tümü</button></div></div><button class="btn primary admin-only hidden" id="btnResidentAdd">➕ Sakin Ekle</button></div>
 <div class="table-container"><table class="tbl" id="resTbl">
 <thead><tr><th>Daire No</th><th>Ad Soyad</th><th>Telefon</th><th>E-posta</th><th>Durum</th><th>Plaka</th><th>İşlemler</th></tr></thead>
 <tbody id="resTbody"></tbody></table></div>
@@ -174,6 +174,7 @@
 <div class="row-gap"><label style="flex:1">Daire No<input name="flatNo" required=""/></label><label style="flex:1">Ad Soyad<input name="name" required=""/></label></div>
 <div class="row-gap"><label style="flex:1">Telefon<input name="phone" type="tel"/></label><label style="flex:1">E-posta<input name="email" type="email"/></label></div>
 <div class="row-gap"><label style="flex:1">Durum<select name="status"><option value="">Seçiniz</option><option value="Owner">Ev Sahibi</option><option value="Tenant">Kiracı</option></select></label><label style="flex:1">Plaka<input name="licensePlate" placeholder="34ABC123"/></label></div>
+<div class="row-gap"><label style="flex:1" class="inline-check"><input type="checkbox" name="isActive" checked> Aktif</label><label style="flex:1">Çıkış Tarihi (opsiyonel)<input name="moveOutDate" type="date"/></label></div>
 <div class="modal-actions"><button class="btn" data-close="" type="button">İptal</button><button class="btn primary">Kaydet</button></div>
 </form>
 </div></div>
