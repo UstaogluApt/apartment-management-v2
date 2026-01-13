@@ -1070,6 +1070,7 @@ async function enhancePaymentForm(){
 
 function paymentPeriod(rec){
   return ((rec?.month ?? rec?.period ?? '') + '').trim();
+}
 
 async function migratePaymentsFillFlatNo(){
   // Eski kayıtları otomatik toparla: flatNo yoksa residentId'den doldur.
@@ -1107,7 +1108,6 @@ async function migratePaymentsFillFlatNo(){
   }catch(err){
     console.warn('V2 migration failed:', err);
   }
-}
 }
 
 // Ay/ Açıklama zorunluluğunu yönet zorunluluğunu yönet
