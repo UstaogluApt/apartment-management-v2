@@ -81,6 +81,8 @@ let announcementsCache = [];
 let editingAnnouncementId = null;
 let editingRole = null;
 let editingResidentId = null;
+let editingResidentIsActive = null;
+let residentsFilterMode = 'active';
 let editingPaymentId = null;
 let editingExpenseId = null;
 
@@ -664,28 +666,49 @@ qsa('.role-edit').forEach(btn=>{
 /* ==================== Residents ==================== */
 async function renderResidentsTable(){
   const tbody = qs('#resTbody'); if(!tbody) return;
-  const rows = await listResidents();
+
+  // Filter mode from UI (if exists)
+  const sel = qs('#residentFilter');
+  if(sel && sel.value) residentsFilterMode = sel.value;
+
+  let rows = await listResidents();
+  // Default: only active residents to avoid confusion
+  if(residentsFilterMode === 'active'){
+    rows = rows.filter(isResidentActive);
+  }else if(residentsFilterMode === 'inactive'){
+    rows = rows.filter(r=> !isResidentActive(r));
+  }
+
   rows.sort((a,b)=> (''+(a.flatNo||'')).localeCompare((''+(b.flatNo||'')), 'tr', {numeric:true}));
 
   const isAdminUI = currentRole==='admin';
   tbody.innerHTML = rows.map(r=>{
-    const activeBadge = '';
+    const active = isResidentActive(r);
+    const badge = active
+      ? '<span class="badge paid" title="Aktif">Aktif</span>'
+      : '<span class="badge unpaid" title="Taşındı/Pasif">Pasif</span>';
+
     return `
     <tr data-id="${r.id}">
       <td>${r.flatNo||''}</td>
-      <td>${r.name||''}</td>
+      <td style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+        <span>${r.name||''}</span> ${badge}
+      </td>
       <td>${r.phone||''}</td>
       <td>${r.email||''}</td>
       <td>${statusToTR(r.status)}</td>
       <td>${r.licensePlate||''}</td>
-      <td>
+      <td style="display:flex;gap:6px;flex-wrap:wrap">
         ${isAdminUI ? `
+          ${active
+            ? `<button type="button" class="btn small outline" data-deactivate="${r.id}">⏸️ Pasife Al</button>`
+            : `<button type="button" class="btn small primary" data-activate="${r.id}">▶️ Aktif Yap</button>`}
           <button type="button" class="btn small" data-edit="${r.id}">✏️ Düzenle</button>
           <button type="button" class="btn small danger" data-del="${r.id}">🗑️ Sil</button>
         ` : ''}
       </td>
     </tr>`;
-  }).join('') || `<tr><td colspan="7" style="text-align:center;color:#777;padding:16px">Henüz kayıt yok</td></tr>`;
+  }).join('') || `<tr><td colspan="7" style="text-align:center;color:#777;padding:16px">Kayıt yok</td></tr>`;
 
   if (!tbody.dataset.bound) {
     tbody.addEventListener('click', onResidentsTableClick);
@@ -696,9 +719,32 @@ async function renderResidentsTable(){
 async function onResidentsTableClick(e){
   const editBtn = e.target.closest('button[data-edit]');
   const delBtn  = e.target.closest('button[data-del]');
-  if (!editBtn && !delBtn) return;
+  const actBtn  = e.target.closest('button[data-activate]');
+  const deactBtn= e.target.closest('button[data-deactivate]');
+  if (!editBtn && !delBtn && !actBtn && !deactBtn) return;
   e.preventDefault(); e.stopPropagation();
   if(currentRole!=='admin'){ alert('Sadece yönetici işlem yapabilir.'); return; }
+
+  if(actBtn){
+    const id = actBtn.getAttribute('data-activate');
+    try{
+      await setResidentActive(id, true);
+      await renderResidentsTable();
+      await renderDashboard();
+    }catch(err){ console.error(err); alert('Aktifleştirilemedi: ' + (err?.message||'Bilinmeyen hata')); }
+    return;
+  }
+
+  if(deactBtn){
+    const id = deactBtn.getAttribute('data-deactivate');
+    if(!confirm('Bu sakini pasife almak istiyor musunuz?')) return;
+    try{
+      await setResidentActive(id, false);
+      await renderResidentsTable();
+      await renderDashboard();
+    }catch(err){ console.error(err); alert('Pasife alınamadı: ' + (err?.message||'Bilinmeyen hata')); }
+    return;
+  }
 
   if(editBtn){
     try{
@@ -706,6 +752,7 @@ async function onResidentsTableClick(e){
       const list = await listResidents();
       const rec = list.find(x=>x.id===id); if(!rec) return;
       editingResidentId = id;
+      editingResidentIsActive = isResidentActive(rec);
 
       qs('#residentModalTitle') && (qs('#residentModalTitle').textContent = 'Sakini Düzenle');
       const f = qs('#formResident'); if(!f){ alert('Sakin formu bulunamadı'); return; }
@@ -723,6 +770,7 @@ async function onResidentsTableClick(e){
       console.error(err);
       alert('Düzenleme açılamadı: ' + (err?.message || 'Bilinmeyen hata'));
     }
+    return;
   }
 
   if(delBtn){
@@ -732,24 +780,32 @@ async function onResidentsTableClick(e){
       await renderResidentsTable();
       await renderDashboard();
     }
+    return;
   }
 }
 
-// yeni sakin ekle
 qs('#btnResidentAdd')?.addEventListener('click',(e)=>{
   e.preventDefault();
   if(currentRole!=='admin') return;
   assignFlatOnSave = null;
   editingResidentId = null;
+  editingResidentIsActive = null;
   qs('#residentModalTitle') && (qs('#residentModalTitle').textContent = 'Sakin Ekle');
   qs('#formResident')?.reset();
   openModal(modalSel('#modalResident','#residentModal'));
 });
+
+qs('#residentFilter')?.addEventListener('change', async (e)=>{
+  residentsFilterMode = e.target.value || 'active';
+  await renderResidentsTable();
+});
+
 qs('#addResident')?.addEventListener('click',(e)=>{
   e.preventDefault();
   if(currentRole!=='admin') return;
   assignFlatOnSave = null;
   editingResidentId = null;
+  editingResidentIsActive = null;
   qs('#residentModalTitle') && (qs('#residentModalTitle').textContent = 'Sakin Ekle');
   qs('#formResident')?.reset();
   openModal(modalSel('#modalResident','#residentModal'));
@@ -761,19 +817,22 @@ qs('#formResident')?.addEventListener('submit', async (e)=>{
   const payload = {
     ...formObj,
     status: statusToEN(formObj.status),
-    isActive: true,
-    moveInDate: new Date().toISOString()
+    // Edit modunda aktif/pasif durumunu koru (yanlışlıkla aktifleşmesin)
+    isActive: (editingResidentId ? (editingResidentIsActive !== null ? editingResidentIsActive : true) : true),
+    moveInDate: (editingResidentId ? undefined : new Date().toISOString())
   };
   try{
     if(editingResidentId){
       await updateResident(editingResidentId, payload);
+      if(payload.isActive){
+        await deactivateActiveResidentsForFlat((payload.flatNo||'').toString(), editingResidentId, new Date().toISOString());
+      }
+      invalidateResidentsCache();
     }else{
       const res = await addResident(payload);
-      // Eğer fees sayfasından "Yeni Sakin Ata" ile geldiysek, eski aktif sakini pasifle
-      if(assignFlatOnSave){
-        // (removed move-out flow)
-        assignFlatOnSave = null;
-      }
+      // Aynı dairede daha önce aktif olan varsa pasife çek (tarihçe korunur)
+      await deactivateActiveResidentsForFlat((payload.flatNo||'').toString(), res.id, (payload.moveInDate || new Date().toISOString()));
+      assignFlatOnSave = null;
     }
     closeModals(); e.target.reset(); editingResidentId = null;
     await renderResidentsTable(); await renderDashboard();
@@ -784,6 +843,30 @@ async function deactivateActiveResidentsForFlat(flatNo, newId, moveInISO){
   const list = await listResidents();
   const toClose = list.filter(r=> (r.flatNo||'')===flatNo && isResidentActive(r) && r.id!==newId);
   await Promise.all(toClose.map(r=> updateResident(r.id, { isActive:false, moveOutDate: moveInISO })));
+}
+
+async function setResidentActive(id, makeActive){
+  if(currentRole!=='admin') throw new Error('Yetki yok');
+  const list = await listResidents();
+  const rec = list.find(r=>r.id===id);
+  if(!rec) return;
+
+  const nowISO = new Date().toISOString();
+
+  if(makeActive){
+    // Aynı dairede aktif görünen başka kayıt varsa pasife çek
+    const flatNo = (rec.flatNo||'').toString();
+    await Promise.all(list
+      .filter(r=> (r.flatNo||'').toString()===flatNo && isResidentActive(r) && r.id!==id)
+      .map(r=> updateResident(r.id, { isActive:false, moveOutDate: nowISO }))
+    );
+
+    await updateResident(id, { isActive:true, moveOutDate: null });
+  }else{
+    await updateResident(id, { isActive:false, moveOutDate: nowISO });
+  }
+
+  invalidateResidentsCache();
 }
 
 /* ==================== PAYMENTS (Açıklama + Ay yönetimi) ==================== */
