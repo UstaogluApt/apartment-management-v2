@@ -559,10 +559,14 @@ qs('#exportExpenses')?.addEventListener('click',()=>exportCollection('expenses')
 async function renderDashboard(){
   const box=qs('#dashboardSummary'); if(!box) return; box.innerHTML="";
   const [res,pays,exps]=await Promise.all([listResidents(),listPayments(),listExpenses()]);
+  // ✅ Dashboard 'Toplam Sakin' sadece aktif sakinleri içerir
+  const activeRes = (res||[]).filter(isResidentActive);
+  // ✅ Dashboard 'Toplam Sakin' sadece aktif sakinleri içerir
+  const activeRes = (res||[]).filter(isResidentActive);
   const totalP=pays.reduce((s,p)=>s+(+p.amount||0),0);
   const totalE=exps.reduce((s,p)=>s+(+p.amount||0),0);
   const items=[
-    {title:'Toplam Sakin', val: res.length},
+    {title:'Toplam Sakin', val: activeRes.length},
     {title:'Toplam Ödeme', val: fmtTRY.format(totalP)},
     {title:'Toplam Gider',  val: fmtTRY.format(totalE)},
     {title:'Bakiye',       val: fmtTRY.format(totalP-totalE)}
