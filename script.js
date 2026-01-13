@@ -248,7 +248,7 @@ function buildPaymentsIndex(payments){
   (payments||[]).forEach(p=>{
     const type = p.type || p.paymentType || 'Due';
     if(type !== 'Due') return;
-    const ym = (p.month||'').trim(); if(!/^\d{4}-\d{2}$/.test(ym)) return;
+    const ym = paymentPeriod(p); if(!/^\d{4}-\d{2}$/.test(ym)) return;
     const flat = String(p.flatNo || p._derivedFlatNo || '').trim(); if(!flat) return;
     const amount = +p.amount || 0;
     if(!idx[flat]) idx[flat]={};
@@ -282,11 +282,18 @@ async function renderReportsTable(){
   if(!thead||!tbody||!tfoot) return;
 
   const [residents, payments] = await Promise.all([getResidentsCached(), listPayments()]);
+  const idToFlat   = new Map(residents.map(r=>[r.id, String(r.flatNo||'')]));
   const nameToFlat = new Map(residents.map(r=>[(r.name||'').trim().toLowerCase(), String(r.flatNo||'')]));
   payments.forEach(r=>{
-    if(!r.flatNo && r.residentName){
-      const f = nameToFlat.get(r.residentName.trim().toLowerCase());
-      if(f) r._derivedFlatNo = f;
+    if(!r.flatNo){
+      if(r.residentId){
+        const f = idToFlat.get(r.residentId);
+        if(f) r._derivedFlatNo = f;
+      }
+      if(!r._derivedFlatNo && r.residentName){
+        const f2 = nameToFlat.get(r.residentName.trim().toLowerCase());
+        if(f2) r._derivedFlatNo = f2;
+      }
     }
   });
 
@@ -905,16 +912,18 @@ async function onPaymentsTableClick(e){
       if (sel) sel.value = selectedId || '';
       const chosen = residents.find(r=>r.id===selectedId);
 
-      setInputValue(f, 'input[name="residentName"]', rec.residentName || chosen?.name || '');
       setInputValue(f, 'input[name="flatNo"]',       rec.flatNo || chosen?.flatNo || '');
       setInputValue(f, 'input[name="residentId"]',   selectedId || '');
+
+      const payer = rec.payerName || rec.residentName || chosen?.name || '';
+      setInputValue(f, 'input[name="payerName"]', payer);
 
       const typSel = qs('#paymentType');
       const typeVal = (rec.type || rec.paymentType || 'Due');
       if (typSel) typSel.value = typeVal;
 
-      const monthField = f.querySelector('[name="month"]');
-      if(monthField) monthField.value = typeVal === 'Extra' ? '' : (rec.month || '');
+      const perField = f.querySelector('[name="period"], [name="month"]');
+      if(perField) perField.value = typeVal === 'Extra' ? '' : (paymentPeriod(rec) || '');
 
       setInputValue(f, 'input[name="amount"]',      rec.amount ?? '');
       setInputValue(f, 'input[name="date"]',        rec.date ? toISODateInput(rec.date) : '');
@@ -946,7 +955,7 @@ async function onPaymentsTableClick(e){
 async function enhancePaymentForm(){
   const f = qs('#formPayment'); if(!f) return;
 
-  // Tür
+  // Tür (Aidat / Ek Ödeme)
   if(!qs('#paymentType')){
     const lab = document.createElement('label');
     lab.innerHTML = `Ödeme Türü
@@ -955,14 +964,21 @@ async function enhancePaymentForm(){
         <option value="Extra">Ek Ödeme</option>
       </select>`;
     f.prepend(lab);
-    qs('#paymentType').addEventListener('change', toggleMonthVisibility);
+    qs('#paymentType')?.addEventListener('change', toggleMonthVisibility);
   }
 
-  // Sakin seçimi
+  // residentId (opsiyonel) - raporlar için gerekmiyor ama filtreleme için faydalı
+  if(!qs('input[name="residentId"]')){
+    const hid = document.createElement('input');
+    hid.type = 'hidden'; hid.name = 'residentId';
+    f.appendChild(hid);
+  }
+
+  // Sakin seçimi (opsiyonel yardımcı alan): seçilirse daire no otomatik dolar
   if(!qs('#residentSelect')){
     const residents = await getResidentsCached();
     const lab = document.createElement('label');
-    lab.textContent = 'Sakin Seç';
+    lab.textContent = 'Sakin Seç (opsiyonel)';
     const sel = document.createElement('select');
     sel.id = 'residentSelect';
     sel.name = 'residentSelect';
@@ -974,56 +990,43 @@ async function enhancePaymentForm(){
         .join('');
     lab.appendChild(sel);
 
-    const rnLabel = f.querySelector('input[name="residentName"]')?.closest('label');
-    if(rnLabel && rnLabel.parentNode){
-      rnLabel.parentNode.insertBefore(lab, rnLabel);
-    } else {
+    // Daire no alanının hemen altına ekle (yoksa en üste)
+    const flatLabel = f.querySelector('input[name="flatNo"]')?.closest('label');
+    if(flatLabel && flatLabel.parentNode){
+      flatLabel.parentNode.insertBefore(lab, flatLabel.nextSibling);
+    }else{
       f.prepend(lab);
-    }
-
-    if(!qs('input[name="residentId"]')){
-      const hid = document.createElement('input');
-      hid.type = 'hidden'; hid.name = 'residentId';
-      f.appendChild(hid);
-    }
-
-    if(!qs('input[name="flatNo"]')){
-      const labFlat = document.createElement('label');
-      labFlat.innerHTML = `Daire No
-        <input name="flatNo" placeholder="örn. 12" />`;
-      if(rnLabel && rnLabel.nextSibling){
-        rnLabel.parentNode.insertBefore(labFlat, rnLabel.nextSibling);
-      } else {
-        f.appendChild(labFlat);
-      }
     }
 
     sel.addEventListener('change', ()=>{
       const v = sel.value;
       const res = (_residentsCache||[]).find(r=>r.id===v);
-      const nameInp = f.querySelector('input[name="residentName"]');
       const idInp   = f.querySelector('input[name="residentId"]');
       const flatInp = f.querySelector('input[name="flatNo"]');
+      const payerInp= f.querySelector('input[name="payerName"]');
       if(res){
-        nameInp && (nameInp.value = res.name || '');
         idInp && (idInp.value = res.id);
-        flatInp && (flatInp.value = res.flatNo || '');
+        flatInp && !flatInp.value && (flatInp.value = res.flatNo || '');
+        // Ödeyen boşsa, seçilen sakini öner
+        if(payerInp && !payerInp.value) payerInp.value = res.name || '';
       }else{
         idInp && (idInp.value = '');
       }
     });
   }
 
-  // Açıklama alanı
+  // Açıklama alanı (Ek ödeme için zorunlu)
   if(!qs('#paymentDescription')){
-    const monthWrapRef = f.querySelector('[name="month"]')?.closest('label');
+    const periodWrapRef =
+      f.querySelector('[name="period"]')?.closest('label') ||
+      f.querySelector('[name="month"]')?.closest('label');
     const descWrap = document.createElement('label');
     descWrap.id = 'paymentDescWrap';
     descWrap.style.display = 'none';
     descWrap.innerHTML = `Açıklama
       <input id="paymentDescription" name="description" placeholder="Örn. asansör tamiri / bağış / gecikme cezası" />`;
-    if(monthWrapRef && monthWrapRef.parentNode){
-      monthWrapRef.parentNode.insertBefore(descWrap, monthWrapRef.nextSibling);
+    if(periodWrapRef && periodWrapRef.parentNode){
+      periodWrapRef.parentNode.insertBefore(descWrap, periodWrapRef.nextSibling);
     } else {
       f.appendChild(descWrap);
     }
@@ -1032,7 +1035,49 @@ async function enhancePaymentForm(){
   toggleMonthVisibility();
 }
 
-// Ay/ Açıklama zorunluluğunu yönet
+function paymentPeriod(rec){
+  return ((rec?.month ?? rec?.period ?? '') + '').trim();
+
+async function migratePaymentsFillFlatNo(){
+  // Eski kayıtları otomatik toparla: flatNo yoksa residentId'den doldur.
+  if(currentRole!=='admin') return;
+  const flagKey = 'v2_migrated_flatno_2026_01';
+  if(localStorage.getItem(flagKey)) return;
+
+  try{
+    const [payments, residents] = await Promise.all([listPayments(), getResidentsCached()]);
+    const idToFlat = new Map(residents.map(r=>[r.id, String(r.flatNo||'').trim()]));
+    let updated = 0;
+
+    for(const p of (payments||[])){
+      const patch = {};
+      const flat = String(p.flatNo||'').trim();
+      if(!flat && p.residentId){
+        const f = idToFlat.get(p.residentId);
+        if(f) patch.flatNo = f;
+      }
+      // payerName yoksa residentName'den doldur (geriye dönük)
+      if(!p.payerName && p.residentName) patch.payerName = String(p.residentName||'').trim();
+      // period alanı yoksa month'tan doldur
+      if(!p.period && p.month) patch.period = String(p.month||'').trim();
+
+      if(Object.keys(patch).length){
+        await updatePayment(p.id, patch);
+        updated++;
+      }
+    }
+
+    localStorage.setItem(flagKey, '1');
+    if(updated){
+      console.log('V2 migration: payments patched =', updated);
+    }
+  }catch(err){
+    console.warn('V2 migration failed:', err);
+  }
+}
+}
+
+// Ay/ Açıklama zorunluluğunu yönet zorunluluğunu yönet
 function toggleMonthVisibility(){
   const f = qs('#formPayment'); if(!f) return;
   const typ = qs('#paymentType')?.value || 'Due';
@@ -1067,15 +1112,17 @@ function toggleMonthVisibility(){
 
 function matchPaymentFilters(rec, q, y, m, t, rid){
   let ok = true;
+  const per = paymentPeriod(rec);
   if(q){
-    const hay = `${rec.residentName||''} ${rec.flatNo||''} ${(rec.month||'')}
+    const payer = (rec.payerName || rec.residentName || '');
+    const hay = `${payer} ${rec.flatNo||''} ${per}
                  ${rec.description||''} ${typeToTR(rec.type||'Due')} ${fmtDate(rec.date)}`.toLowerCase();
     ok = hay.includes(q.toLowerCase());
   }
   if(ok && rid){ ok = (rec.residentId||'') === rid; }
   if(ok && t){ ok = (rec.type||'Due') === t; }
-  if(ok && y){ ok = (rec.month||'').slice(0,4) === y; }
-  if(ok && m){ ok = (rec.month||'').slice(5,7) === m; }
+  if(ok && y){ ok = per.slice(0,4) === y; }
+  if(ok && m){ ok = per.slice(5,7) === m; }
   return ok;
 }
 
@@ -1085,11 +1132,18 @@ async function renderPaymentsTable(){
   if(!tbody) return;
 
   const [rows, residents] = await Promise.all([listPayments(), getResidentsCached()]);
-  const nameToFlat = new Map(residents.map(r=>[(r.name||'').trim().toLowerCase(), r.flatNo || '']));
+  const idToFlat   = new Map(residents.map(r=>[r.id, String(r.flatNo||'')]));
+  const nameToFlat = new Map(residents.map(r=>[(r.name||'').trim().toLowerCase(), String(r.flatNo||'')]));
   rows.forEach(r=>{
-    if(!r.flatNo && r.residentName){
-      const f = nameToFlat.get(r.residentName.trim().toLowerCase());
-      if(f) r._derivedFlatNo = f;
+    if(!r.flatNo){
+      if(r.residentId){
+        const f = idToFlat.get(r.residentId);
+        if(f) r._derivedFlatNo = f;
+      }
+      if(!r._derivedFlatNo && r.residentName){
+        const f2 = nameToFlat.get(r.residentName.trim().toLowerCase());
+        if(f2) r._derivedFlatNo = f2;
+      }
     }
   });
 
@@ -1116,11 +1170,11 @@ async function renderPaymentsTable(){
     const amount = +r.amount || 0; total += amount;
     const flat = r.flatNo || r._derivedFlatNo || '';
     const typTR = typeToTR(r.type);
-    const monthText = r.type === 'Extra' ? '—' : (r.month || '');
+    const monthText = r.type === 'Extra' ? '—' : (paymentPeriod(r) || '');
     const descText  = r.description || '—';
     return `
       <tr data-id="${r.id}">
-        <td>${r.residentName||''}</td>
+        <td>${(r.payerName||r.residentName||'')}</td>
         <td>${flat||''}</td>
         <td>${typTR}</td>
         <td>${monthText}</td>
@@ -1161,11 +1215,11 @@ async function exportPaymentsCSV(){
   const data = filtered.map(r=>{
     const flat = r.flatNo || r._derivedFlatNo || '';
     const type = r.type==='Extra' ? 'Ek' : 'Aidat';
-    const month= r.type==='Extra' ? '' : (r.month||'');
+    const month= r.type==='Extra' ? '' : (paymentPeriod(r) || '');
     const desc = r.description || '';
     const amount = (+r.amount||0).toFixed(2);
     const date = r.date ? (new Date(r.date)).toISOString().slice(0,10) : '';
-    return [r.residentName||'', String(flat), type, month, desc, amount, date];
+    return [(r.payerName||r.residentName||''), String(flat), type, month, desc, amount, date];
   });
   const sep=','; const bom='\ufeff';
   const csv = ['sep=,', headers.join(sep), ...data.map(r=> r.map(v=>`"${trToAscii(String(v)).replace(/"/g,'""')}"`).join(sep))].join('\n');
@@ -1741,22 +1795,30 @@ adminForm?.addEventListener('submit', async (e) => {
 /* Ödeme formu */
 qs('#formPayment')?.addEventListener('submit', async (e)=>{
   e.preventDefault(); if(currentRole!=='admin') return;
-  const o=Object.fromEntries(new FormData(e.target).entries());
-  const date=o.date?new Date(o.date).toISOString():new Date().toISOString();
+  const o = Object.fromEntries(new FormData(e.target).entries());
+
+  const date = o.date ? new Date(o.date).toISOString() : new Date().toISOString();
   const type = o.type ? o.type : 'Due';
-  const monthVal = (type === 'Extra') ? '' : (o.month || '');
-  const descVal  = (type === 'Extra') ? (o.description || '') : '';
+
+  // Aidat/Ek ödeme dönemi: yeni formda "period" kullanıyoruz, eski kayıtlarda "month" olabilir
+  const periodVal = (type === 'Extra') ? '' : ((o.period || o.month || '').trim());
+  const descVal   = (type === 'Extra') ? ((o.description || '').trim()) : '';
+
+  const flatNo = (o.flatNo || '').trim();
 
   const payload = {
-    residentId: o.residentId || '',
-    residentName: o.residentName,
-    flatNo: o.flatNo || '',
+    residentId: (o.residentId || '').trim(), // opsiyonel
+    payerName: (o.payerName || '').trim(),
+    residentName: ((o.payerName || '')).trim(), // geriye dönük uyumluluk
+    flatNo,
     type,
-    month: monthVal,
+    month: periodVal,   // geriye dönük uyumluluk
+    period: periodVal,  // yeni alan
     description: descVal,
     amount: +(o.amount||0),
     date
   };
+
   try{
     if(editingPaymentId){
       await updatePayment(editingPaymentId, payload);
@@ -1807,6 +1869,7 @@ onAuthStateChanged(auth, async (user)=>{
   }
 
   currentRole = (await fetchRole(currentUser.uid)) ? 'admin' : 'user';
+  await migratePaymentsFillFlatNo();
   qsa('.admin-only').forEach(el=> currentRole==='admin'?show(el):hide(el));
   // Hide export buttons by id for non-admins
   if(currentRole!=='admin'){
