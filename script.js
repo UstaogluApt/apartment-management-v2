@@ -14,13 +14,13 @@ try{
 }catch{}
 /* ==================== Firebase Config ==================== */
 const firebaseConfig = {
-  apiKey: "AIzaSyAaDiuQmFW2SA1HGQ1G8CH7YmYC1w104lY",
-  authDomain: "apartment-management-v2.firebaseapp.com",
-  projectId: "apartment-management-v2",
-  storageBucket: "apartment-management-v2.firebasestorage.app",
-  messagingSenderId: "614034681672",
-  appId: "1:614034681672:web:0b7ad34ad970ea6178cd7d",
-  measurementId: "G-973B4DLE2T"
+  apiKey: "AIzaSyCrb6EKsuaZunD5aIakwho07Sh_UXAceXc",
+  authDomain: "ustaogluaptyonetim.firebaseapp.com",
+  projectId: "ustaogluaptyonetim",
+  storageBucket: "ustaogluaptyonetim.firebasestorage.app",
+  messagingSenderId: "829433786147",
+  appId: "1:829433786147:web:05dd0c2d866767b2d52696",
+  measurementId: "G-TX1BERLB12"
 };
 
 /* ==================== Init ==================== */
@@ -37,6 +37,38 @@ const show = (el)=> el && el.classList.remove('hidden');
 const hide = (el)=> el && el.classList.add('hidden');
 const fmtTRY = new Intl.NumberFormat('tr-TR', { style:'currency', currency:'TRY' });
 const fmtDate = (v)=> { if(!v) return "-"; const d=v instanceof Date?v:new Date(v); return d.toLocaleDateString('tr-TR',{year:'numeric',month:'short',day:'numeric'}); };
+// Basit bilgilendirme mesajı (toast) - CSS gerektirmez
+function showToast(message, type='info', ms=3500){
+  try{
+    const id = 'toastWrap';
+    let wrap = document.getElementById(id);
+    if(!wrap){
+      wrap = document.createElement('div');
+      wrap.id = id;
+      wrap.style.position = 'fixed';
+      wrap.style.right = '16px';
+      wrap.style.top = '16px';
+      wrap.style.zIndex = '9999';
+      wrap.style.display = 'flex';
+      wrap.style.flexDirection = 'column';
+      wrap.style.gap = '10px';
+      document.body.appendChild(wrap);
+    }
+    const t = document.createElement('div');
+    t.textContent = message;
+    t.style.padding = '10px 12px';
+    t.style.borderRadius = '12px';
+    t.style.boxShadow = '0 10px 28px rgba(0,0,0,.18)';
+    t.style.fontSize = '14px';
+    t.style.maxWidth = '360px';
+    t.style.border = '1px solid rgba(0,0,0,.12)';
+    t.style.background = (type==='success') ? '#e9f9ee' : (type==='warning' ? '#fff7e6' : (type==='danger' ? '#ffe9e9' : '#eef3ff'));
+    t.style.color = '#111';
+    wrap.appendChild(t);
+    setTimeout(()=>{ try{ t.style.opacity='0'; t.style.transform='translateY(-6px)'; t.style.transition='all .25s ease'; }catch{} }, ms-300);
+    setTimeout(()=>{ try{ t.remove(); if(wrap.childElementCount===0) wrap.remove(); }catch{} }, ms);
+  }catch{}
+}
 
 function setInputValue(form, selector, value){
   if(!form) return;
@@ -248,7 +280,7 @@ function buildPaymentsIndex(payments){
   (payments||[]).forEach(p=>{
     const type = p.type || p.paymentType || 'Due';
     if(type !== 'Due') return;
-    const ym = paymentPeriod(p); if(!/^\d{4}-\d{2}$/.test(ym)) return;
+    const ym = (p.month||'').trim(); if(!/^\d{4}-\d{2}$/.test(ym)) return;
     const flat = String(p.flatNo || p._derivedFlatNo || '').trim(); if(!flat) return;
     const amount = +p.amount || 0;
     if(!idx[flat]) idx[flat]={};
@@ -282,18 +314,11 @@ async function renderReportsTable(){
   if(!thead||!tbody||!tfoot) return;
 
   const [residents, payments] = await Promise.all([getResidentsCached(), listPayments()]);
-  const idToFlat   = new Map(residents.map(r=>[r.id, String(r.flatNo||'')]));
   const nameToFlat = new Map(residents.map(r=>[(r.name||'').trim().toLowerCase(), String(r.flatNo||'')]));
   payments.forEach(r=>{
-    if(!r.flatNo){
-      if(r.residentId){
-        const f = idToFlat.get(r.residentId);
-        if(f) r._derivedFlatNo = f;
-      }
-      if(!r._derivedFlatNo && r.residentName){
-        const f2 = nameToFlat.get(r.residentName.trim().toLowerCase());
-        if(f2) r._derivedFlatNo = f2;
-      }
+    if(!r.flatNo && r.residentName){
+      const f = nameToFlat.get(r.residentName.trim().toLowerCase());
+      if(f) r._derivedFlatNo = f;
     }
   });
 
@@ -664,42 +689,12 @@ qsa('.role-edit').forEach(btn=>{
 /* ==================== Residents ==================== */
 async function renderResidentsTable(){
   const tbody = qs('#resTbody'); if(!tbody) return;
-
-  // Filtre (Aktif / Pasif / Tümü)
-  const filterSel = qs('#resFilter');
-  const filterVal = (filterSel?.value || 'active');
-
-  // Filtre değişince tekrar çiz
-  if(filterSel && !filterSel.dataset.bound){
-    filterSel.addEventListener('change', ()=> renderResidentsTable());
-    filterSel.dataset.bound = '1';
-  }
-
-  let rows = await listResidents();
+  const rows = await listResidents();
   rows.sort((a,b)=> (''+(a.flatNo||'')).localeCompare((''+(b.flatNo||'')), 'tr', {numeric:true}));
-
-  // aktif/pasif filtre uygula
-  rows = rows.filter(r=>{
-    if(filterVal==='all') return true;
-    const active = isResidentActive(r);
-    if(filterVal==='active') return active;
-    if(filterVal==='passive') return !active;
-    return true;
-  });
 
   const isAdminUI = currentRole==='admin';
   tbody.innerHTML = rows.map(r=>{
-    const active = isResidentActive(r);
-    const activeBadge = active
-      ? '<span class="badge paid">Aktif</span>'
-      : '<span class="badge unpaid">Pasif</span>';
-
-    const toggleBtn = isAdminUI
-      ? `<button type="button" class="btn small outline" data-toggle="${r.id}" data-to="${active ? 'passive' : 'active'}">
-           ${active ? '⛔ Pasife Al' : '✅ Aktife Al'}
-         </button>`
-      : '';
-
+    const activeBadge = '';
     return `
     <tr data-id="${r.id}">
       <td>${r.flatNo||''}</td>
@@ -708,16 +703,14 @@ async function renderResidentsTable(){
       <td>${r.email||''}</td>
       <td>${statusToTR(r.status)}</td>
       <td>${r.licensePlate||''}</td>
-      <td>${activeBadge}</td>
       <td>
         ${isAdminUI ? `
           <button type="button" class="btn small" data-edit="${r.id}">✏️ Düzenle</button>
-          ${toggleBtn}
           <button type="button" class="btn small danger" data-del="${r.id}">🗑️ Sil</button>
         ` : ''}
       </td>
     </tr>`;
-  }).join('') || `<tr><td colspan="8" style="text-align:center;color:#777;padding:16px">Henüz kayıt yok</td></tr>`;
+  }).join('') || `<tr><td colspan="7" style="text-align:center;color:#777;padding:16px">Henüz kayıt yok</td></tr>`;
 
   if (!tbody.dataset.bound) {
     tbody.addEventListener('click', onResidentsTableClick);
@@ -725,48 +718,12 @@ async function renderResidentsTable(){
   }
 }
 
-
-async function setResidentActive(residentId, makeActive){
-  const list = await listResidents();
-  const rec = list.find(x=>x.id===residentId);
-  if(!rec) return;
-
-  const nowISO = new Date().toISOString();
-
-  if(makeActive){
-    // Bu dairede başka aktif varsa pasife al
-    const flatNo = String(rec.flatNo||'').trim();
-    if(flatNo){
-      await deactivateActiveResidentsForFlat(flatNo, residentId, nowISO);
-    }
-    await updateResident(residentId, { isActive:true, moveOutDate:null });
-  }else{
-    await updateResident(residentId, { isActive:false, moveOutDate: nowISO });
-  }
-}
 async function onResidentsTableClick(e){
-  const editBtn   = e.target.closest('button[data-edit]');
-  const delBtn    = e.target.closest('button[data-del]');
-  const toggleBtn = e.target.closest('button[data-toggle]');
-
-  if(!editBtn && !delBtn && !toggleBtn) return;
+  const editBtn = e.target.closest('button[data-edit]');
+  const delBtn  = e.target.closest('button[data-del]');
+  if (!editBtn && !delBtn) return;
   e.preventDefault(); e.stopPropagation();
-
   if(currentRole!=='admin'){ alert('Sadece yönetici işlem yapabilir.'); return; }
-
-  if(toggleBtn){
-    const id = toggleBtn.getAttribute('data-toggle');
-    const to = toggleBtn.getAttribute('data-to'); // active | passive
-    try{
-      await setResidentActive(id, to==='active');
-      await renderResidentsTable();
-      await renderDashboard();
-    }catch(err){
-      console.error(err);
-      alert('Aktiflik değiştirilemedi: ' + (err?.message || 'Bilinmeyen hata'));
-    }
-    return;
-  }
 
   if(editBtn){
     try{
@@ -791,7 +748,6 @@ async function onResidentsTableClick(e){
       console.error(err);
       alert('Düzenleme açılamadı: ' + (err?.message || 'Bilinmeyen hata'));
     }
-    return;
   }
 
   if(delBtn){
@@ -826,48 +782,43 @@ qs('#addResident')?.addEventListener('click',(e)=>{
 qs('#formResident')?.addEventListener('submit', async (e)=>{
   e.preventDefault();
   if(currentRole!=='admin'){ alert('Sadece yönetici işlem yapabilir.'); return; }
-
   const formObj = Object.fromEntries(new FormData(e.target).entries());
-  const nowISO = new Date().toISOString();
+
+  // Edit sırasında isActive zorla true yapılmasın; mevcut durum korunsun.
+  const payload = {
+    ...formObj,
+    status: statusToEN(formObj.status),
+  };
+  const moveInISO = new Date().toISOString();
 
   try{
     if(editingResidentId){
-      // Düzenlemede aktif/pasif durumunu KORU (yanlışlıkla aktifleşmesin)
-      const list = await listResidents();
-      const rec = list.find(x=>x.id===editingResidentId) || {};
-      const payload = {
-        ...rec,
-        ...formObj,
-        status: statusToEN(formObj.status),
-        // rec.isActive aynen kalsın
-        isActive: (typeof rec.isActive==='boolean') ? rec.isActive : true,
-        moveInDate: rec.moveInDate || nowISO
-      };
       await updateResident(editingResidentId, payload);
     }else{
-      // Yeni kayıt: default aktif
-      const payload = {
-        ...formObj,
-        status: statusToEN(formObj.status),
-        isActive: true,
-        moveInDate: nowISO
-      };
+      payload.isActive = true;
+      payload.moveInDate = moveInISO;
+
       const res = await addResident(payload);
 
-      // Aynı dairede varsa eski aktif sakini pasife al (taşınma senaryosu)
-      const flatNo = String(payload.flatNo||'').trim();
-      if(flatNo){
-        await deactivateActiveResidentsForFlat(flatNo, res.id, nowISO);
-      }
+      // Eğer Aidat/Ayarlamalar > "Yeni Sakin Ata" ile geldiysek: aynı dairedeki önceki aktif sakin(ler)i pasife çek
+      if(assignFlatOnSave){
+        const flat = String(assignFlatOnSave).trim();
+        const closedCount = await deactivateActiveResidentsForFlat(flat, res.id, moveInISO);
+        assignFlatOnSave = null;
 
-      assignFlatOnSave = null;
+        if(closedCount > 0){
+          showToast(`Daire ${flat} için önceki aktif sakin pasife alındı.`, 'success');
+        }else{
+          // Önceden aktif yoksa da bilgi verelim (sessiz de geçilebilir)
+          showToast(`Daire ${flat} için yeni sakin atandı.`, 'info');
+        }
+      }else{
+        showToast('Sakin eklendi.', 'success');
+      }
     }
 
-    closeModals();
-    e.target.reset();
-    editingResidentId = null;
-    await renderResidentsTable();
-    await renderDashboard();
+    closeModals(); e.target.reset(); editingResidentId = null;
+    await renderResidentsTable(); await renderDashboard();
   }catch(err){
     console.error(err);
     alert('Kaydedilemedi: ' + (err?.message||'Bilinmeyen hata'));
@@ -878,6 +829,7 @@ async function deactivateActiveResidentsForFlat(flatNo, newId, moveInISO){
   const list = await listResidents();
   const toClose = list.filter(r=> (r.flatNo||'')===flatNo && isResidentActive(r) && r.id!==newId);
   await Promise.all(toClose.map(r=> updateResident(r.id, { isActive:false, moveOutDate: moveInISO })));
+  return toClose.length;
 }
 
 /* ==================== PAYMENTS (Açıklama + Ay yönetimi) ==================== */
@@ -1006,18 +958,16 @@ async function onPaymentsTableClick(e){
       if (sel) sel.value = selectedId || '';
       const chosen = residents.find(r=>r.id===selectedId);
 
+      setInputValue(f, 'input[name="residentName"]', rec.residentName || chosen?.name || '');
       setInputValue(f, 'input[name="flatNo"]',       rec.flatNo || chosen?.flatNo || '');
       setInputValue(f, 'input[name="residentId"]',   selectedId || '');
-
-      const payer = rec.payerName || rec.residentName || chosen?.name || '';
-      setInputValue(f, 'input[name="payerName"]', payer);
 
       const typSel = qs('#paymentType');
       const typeVal = (rec.type || rec.paymentType || 'Due');
       if (typSel) typSel.value = typeVal;
 
-      const perField = f.querySelector('[name="period"], [name="month"]');
-      if(perField) perField.value = typeVal === 'Extra' ? '' : (paymentPeriod(rec) || '');
+      const monthField = f.querySelector('[name="month"]');
+      if(monthField) monthField.value = typeVal === 'Extra' ? '' : (rec.month || '');
 
       setInputValue(f, 'input[name="amount"]',      rec.amount ?? '');
       setInputValue(f, 'input[name="date"]',        rec.date ? toISODateInput(rec.date) : '');
@@ -1049,7 +999,7 @@ async function onPaymentsTableClick(e){
 async function enhancePaymentForm(){
   const f = qs('#formPayment'); if(!f) return;
 
-  // Tür (Aidat / Ek Ödeme)
+  // Tür
   if(!qs('#paymentType')){
     const lab = document.createElement('label');
     lab.innerHTML = `Ödeme Türü
@@ -1058,21 +1008,14 @@ async function enhancePaymentForm(){
         <option value="Extra">Ek Ödeme</option>
       </select>`;
     f.prepend(lab);
-    qs('#paymentType')?.addEventListener('change', toggleMonthVisibility);
+    qs('#paymentType').addEventListener('change', toggleMonthVisibility);
   }
 
-  // residentId (opsiyonel) - raporlar için gerekmiyor ama filtreleme için faydalı
-  if(!qs('input[name="residentId"]')){
-    const hid = document.createElement('input');
-    hid.type = 'hidden'; hid.name = 'residentId';
-    f.appendChild(hid);
-  }
-
-  // Sakin seçimi (opsiyonel yardımcı alan): seçilirse daire no otomatik dolar
+  // Sakin seçimi
   if(!qs('#residentSelect')){
     const residents = await getResidentsCached();
     const lab = document.createElement('label');
-    lab.textContent = 'Sakin Seç (opsiyonel)';
+    lab.textContent = 'Sakin Seç';
     const sel = document.createElement('select');
     sel.id = 'residentSelect';
     sel.name = 'residentSelect';
@@ -1084,43 +1027,56 @@ async function enhancePaymentForm(){
         .join('');
     lab.appendChild(sel);
 
-    // Daire no alanının hemen altına ekle (yoksa en üste)
-    const flatLabel = f.querySelector('input[name="flatNo"]')?.closest('label');
-    if(flatLabel && flatLabel.parentNode){
-      flatLabel.parentNode.insertBefore(lab, flatLabel.nextSibling);
-    }else{
+    const rnLabel = f.querySelector('input[name="residentName"]')?.closest('label');
+    if(rnLabel && rnLabel.parentNode){
+      rnLabel.parentNode.insertBefore(lab, rnLabel);
+    } else {
       f.prepend(lab);
+    }
+
+    if(!qs('input[name="residentId"]')){
+      const hid = document.createElement('input');
+      hid.type = 'hidden'; hid.name = 'residentId';
+      f.appendChild(hid);
+    }
+
+    if(!qs('input[name="flatNo"]')){
+      const labFlat = document.createElement('label');
+      labFlat.innerHTML = `Daire No
+        <input name="flatNo" placeholder="örn. 12" />`;
+      if(rnLabel && rnLabel.nextSibling){
+        rnLabel.parentNode.insertBefore(labFlat, rnLabel.nextSibling);
+      } else {
+        f.appendChild(labFlat);
+      }
     }
 
     sel.addEventListener('change', ()=>{
       const v = sel.value;
       const res = (_residentsCache||[]).find(r=>r.id===v);
+      const nameInp = f.querySelector('input[name="residentName"]');
       const idInp   = f.querySelector('input[name="residentId"]');
       const flatInp = f.querySelector('input[name="flatNo"]');
-      const payerInp= f.querySelector('input[name="payerName"]');
       if(res){
+        nameInp && (nameInp.value = res.name || '');
         idInp && (idInp.value = res.id);
-        flatInp && !flatInp.value && (flatInp.value = res.flatNo || '');
-        // Ödeyen boşsa, seçilen sakini öner
-        if(payerInp && !payerInp.value) payerInp.value = res.name || '';
+        flatInp && (flatInp.value = res.flatNo || '');
       }else{
         idInp && (idInp.value = '');
       }
     });
   }
 
-  // Açıklama alanı (Ek ödeme için zorunlu)
+  // Açıklama alanı
   if(!qs('#paymentDescription')){
-    const periodWrapRef =
-      f.querySelector('[name="period"]')?.closest('label') ||
-      f.querySelector('[name="month"]')?.closest('label');
+    const monthWrapRef = f.querySelector('[name="month"]')?.closest('label');
     const descWrap = document.createElement('label');
     descWrap.id = 'paymentDescWrap';
     descWrap.style.display = 'none';
     descWrap.innerHTML = `Açıklama
       <input id="paymentDescription" name="description" placeholder="Örn. asansör tamiri / bağış / gecikme cezası" />`;
-    if(periodWrapRef && periodWrapRef.parentNode){
-      periodWrapRef.parentNode.insertBefore(descWrap, periodWrapRef.nextSibling);
+    if(monthWrapRef && monthWrapRef.parentNode){
+      monthWrapRef.parentNode.insertBefore(descWrap, monthWrapRef.nextSibling);
     } else {
       f.appendChild(descWrap);
     }
@@ -1129,48 +1085,7 @@ async function enhancePaymentForm(){
   toggleMonthVisibility();
 }
 
-function paymentPeriod(rec){
-  return ((rec?.month ?? rec?.period ?? '') + '').trim();
-}
-async function migratePaymentsFillFlatNo(){
-  // Eski kayıtları otomatik toparla: flatNo yoksa residentId'den doldur.
-  if(currentRole!=='admin') return;
-  const flagKey = 'v2_migrated_flatno_2026_01';
-  if(localStorage.getItem(flagKey)) return;
-
-  try{
-    const [payments, residents] = await Promise.all([listPayments(), getResidentsCached()]);
-    const idToFlat = new Map(residents.map(r=>[r.id, String(r.flatNo||'').trim()]));
-    let updated = 0;
-
-    for(const p of (payments||[])){
-      const patch = {};
-      const flat = String(p.flatNo||'').trim();
-      if(!flat && p.residentId){
-        const f = idToFlat.get(p.residentId);
-        if(f) patch.flatNo = f;
-      }
-      // payerName yoksa residentName'den doldur (geriye dönük)
-      if(!p.payerName && p.residentName) patch.payerName = String(p.residentName||'').trim();
-      // period alanı yoksa month'tan doldur
-      if(!p.period && p.month) patch.period = String(p.month||'').trim();
-
-      if(Object.keys(patch).length){
-        await updatePayment(p.id, patch);
-        updated++;
-      }
-    }
-
-    localStorage.setItem(flagKey, '1');
-    if(updated){
-      console.log('V2 migration: payments patched =', updated);
-    }
-  }catch(err){
-    console.warn('V2 migration failed:', err);
-  }
-}
-
-// Ay/ Açıklama zorunluluğunu yönet zorunluluğunu yönet
+// Ay/ Açıklama zorunluluğunu yönet
 function toggleMonthVisibility(){
   const f = qs('#formPayment'); if(!f) return;
   const typ = qs('#paymentType')?.value || 'Due';
@@ -1205,17 +1120,15 @@ function toggleMonthVisibility(){
 
 function matchPaymentFilters(rec, q, y, m, t, rid){
   let ok = true;
-  const per = paymentPeriod(rec);
   if(q){
-    const payer = (rec.payerName || rec.residentName || '');
-    const hay = `${payer} ${rec.flatNo||''} ${per}
+    const hay = `${rec.residentName||''} ${rec.flatNo||''} ${(rec.month||'')}
                  ${rec.description||''} ${typeToTR(rec.type||'Due')} ${fmtDate(rec.date)}`.toLowerCase();
     ok = hay.includes(q.toLowerCase());
   }
   if(ok && rid){ ok = (rec.residentId||'') === rid; }
   if(ok && t){ ok = (rec.type||'Due') === t; }
-  if(ok && y){ ok = per.slice(0,4) === y; }
-  if(ok && m){ ok = per.slice(5,7) === m; }
+  if(ok && y){ ok = (rec.month||'').slice(0,4) === y; }
+  if(ok && m){ ok = (rec.month||'').slice(5,7) === m; }
   return ok;
 }
 
@@ -1225,18 +1138,11 @@ async function renderPaymentsTable(){
   if(!tbody) return;
 
   const [rows, residents] = await Promise.all([listPayments(), getResidentsCached()]);
-  const idToFlat   = new Map(residents.map(r=>[r.id, String(r.flatNo||'')]));
-  const nameToFlat = new Map(residents.map(r=>[(r.name||'').trim().toLowerCase(), String(r.flatNo||'')]));
+  const nameToFlat = new Map(residents.map(r=>[(r.name||'').trim().toLowerCase(), r.flatNo || '']));
   rows.forEach(r=>{
-    if(!r.flatNo){
-      if(r.residentId){
-        const f = idToFlat.get(r.residentId);
-        if(f) r._derivedFlatNo = f;
-      }
-      if(!r._derivedFlatNo && r.residentName){
-        const f2 = nameToFlat.get(r.residentName.trim().toLowerCase());
-        if(f2) r._derivedFlatNo = f2;
-      }
+    if(!r.flatNo && r.residentName){
+      const f = nameToFlat.get(r.residentName.trim().toLowerCase());
+      if(f) r._derivedFlatNo = f;
     }
   });
 
@@ -1263,11 +1169,11 @@ async function renderPaymentsTable(){
     const amount = +r.amount || 0; total += amount;
     const flat = r.flatNo || r._derivedFlatNo || '';
     const typTR = typeToTR(r.type);
-    const monthText = r.type === 'Extra' ? '—' : (paymentPeriod(r) || '');
+    const monthText = r.type === 'Extra' ? '—' : (r.month || '');
     const descText  = r.description || '—';
     return `
       <tr data-id="${r.id}">
-        <td>${(r.payerName||r.residentName||'')}</td>
+        <td>${r.residentName||''}</td>
         <td>${flat||''}</td>
         <td>${typTR}</td>
         <td>${monthText}</td>
@@ -1308,11 +1214,11 @@ async function exportPaymentsCSV(){
   const data = filtered.map(r=>{
     const flat = r.flatNo || r._derivedFlatNo || '';
     const type = r.type==='Extra' ? 'Ek' : 'Aidat';
-    const month= r.type==='Extra' ? '' : (paymentPeriod(r) || '');
+    const month= r.type==='Extra' ? '' : (r.month||'');
     const desc = r.description || '';
     const amount = (+r.amount||0).toFixed(2);
     const date = r.date ? (new Date(r.date)).toISOString().slice(0,10) : '';
-    return [(r.payerName||r.residentName||''), String(flat), type, month, desc, amount, date];
+    return [r.residentName||'', String(flat), type, month, desc, amount, date];
   });
   const sep=','; const bom='\ufeff';
   const csv = ['sep=,', headers.join(sep), ...data.map(r=> r.map(v=>`"${trToAscii(String(v)).replace(/"/g,'""')}"`).join(sep))].join('\n');
@@ -1888,30 +1794,22 @@ adminForm?.addEventListener('submit', async (e) => {
 /* Ödeme formu */
 qs('#formPayment')?.addEventListener('submit', async (e)=>{
   e.preventDefault(); if(currentRole!=='admin') return;
-  const o = Object.fromEntries(new FormData(e.target).entries());
-
-  const date = o.date ? new Date(o.date).toISOString() : new Date().toISOString();
+  const o=Object.fromEntries(new FormData(e.target).entries());
+  const date=o.date?new Date(o.date).toISOString():new Date().toISOString();
   const type = o.type ? o.type : 'Due';
-
-  // Aidat/Ek ödeme dönemi: yeni formda "period" kullanıyoruz, eski kayıtlarda "month" olabilir
-  const periodVal = (type === 'Extra') ? '' : ((o.period || o.month || '').trim());
-  const descVal   = (type === 'Extra') ? ((o.description || '').trim()) : '';
-
-  const flatNo = (o.flatNo || '').trim();
+  const monthVal = (type === 'Extra') ? '' : (o.month || '');
+  const descVal  = (type === 'Extra') ? (o.description || '') : '';
 
   const payload = {
-    residentId: (o.residentId || '').trim(), // opsiyonel
-    payerName: (o.payerName || '').trim(),
-    residentName: ((o.payerName || '')).trim(), // geriye dönük uyumluluk
-    flatNo,
+    residentId: o.residentId || '',
+    residentName: o.residentName,
+    flatNo: o.flatNo || '',
     type,
-    month: periodVal,   // geriye dönük uyumluluk
-    period: periodVal,  // yeni alan
+    month: monthVal,
     description: descVal,
     amount: +(o.amount||0),
     date
   };
-
   try{
     if(editingPaymentId){
       await updatePayment(editingPaymentId, payload);
@@ -1962,7 +1860,6 @@ onAuthStateChanged(auth, async (user)=>{
   }
 
   currentRole = (await fetchRole(currentUser.uid)) ? 'admin' : 'user';
-  if (typeof migratePaymentsFillFlatNo === 'function') { await migratePaymentsFillFlatNo(); }
   qsa('.admin-only').forEach(el=> currentRole==='admin'?show(el):hide(el));
   // Hide export buttons by id for non-admins
   if(currentRole!=='admin'){
