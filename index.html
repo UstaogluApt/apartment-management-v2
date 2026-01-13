@@ -157,16 +157,38 @@
 </form>
 </div></div>
 <!-- Payment Modal -->
+<!-- Payment Modal -->
 <div class="modal hidden" id="modalPayment"><div class="modal-card">
-<div class="modal-head"><h3>Ödeme Ekle</h3><button class="icon-close" data-close="">✖</button></div>
-<form class="form" id="formPayment">
-<label>Ödeyen (Sakin adı)<input name="residentName" required=""/></label>
-<label>Ay (örn. 2025-08)<input name="month" placeholder="YYYY-MM" required=""/></label>
-<label>Tutar (₺)<input name="amount" required="" step="0.01" type="number"/></label>
-<label>Tarih<input name="date" type="date"/></label>
-<div class="modal-actions"><button class="btn" data-close="" type="button">İptal</button><button class="btn primary">Kaydet</button></div>
-</form>
+  <div class="modal-head"><h3>Ödeme Ekle</h3><button class="icon-close" data-close="">✖</button></div>
+
+  <form class="form" id="formPayment">
+    <label>Daire No
+      <input name="flatNo" required placeholder="1" />
+    </label>
+
+    <label>Dönem (örn. 2015-06)
+      <input name="period" placeholder="YYYY-MM" required />
+    </label>
+
+    <label>Tutar (₺)
+      <input name="amount" required step="0.01" type="number"/>
+    </label>
+
+    <label>Ödeme Tarihi
+      <input name="date" type="date"/>
+    </label>
+
+    <label>Ödeyen Kişi (opsiyonel)
+      <input name="payerName" placeholder="Veli / Komşu / Akraba..." />
+    </label>
+
+    <div class="modal-actions">
+      <button class="btn" data-close="" type="button">İptal</button>
+      <button class="btn primary">Kaydet</button>
+    </div>
+  </form>
 </div></div>
+
 <!-- Expense Modal -->
 <div class="modal hidden" id="modalExpense"><div class="modal-card">
 <div class="modal-head"><h3>Gider</h3><button class="icon-close" data-close="">✖</button></div>
