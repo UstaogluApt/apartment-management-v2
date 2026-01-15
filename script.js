@@ -529,27 +529,24 @@ async function generateMonthlySummaryPDF(){
   ])).sort((a,b)=> (''+a).localeCompare(''+b,'tr',{numeric:true}));
 
   const payIdx  = buildPaymentsIndex(payments);
-  const extraIdx= buildExtrasIndex(payments);
-  const rows = flats.map(f=>{
+    const rows = flats.map(f=>{
     const due = (items[f]!=null) ? +items[f] : defaultAmount;
     const paid = (payIdx[f] && payIdx[f][ym]) || 0;
-    const extra= (extraIdx[f] && extraIdx[f][ym]) || 0;
-    return { flat:f, due, paid, extra, diff: paid - due };
+    return { flat:f, due, paid, diff: paid - due };
   });
 
   const body = [
-    [{text:'Daire',bold:true},{text:'Aidat (₺)',bold:true},{text:'Ödenen (₺)',bold:true},{text:'Ek (₺)',bold:true},{text:'Fark',bold:true}],
-    ...rows.map(r=>[ String(r.flat), fmtTRY.format(r.due), fmtTRY.format(r.paid), fmtTRY.format(r.extra), fmtTRY.format(r.diff) ])
+    [{text:'Daire',bold:true},{text:'Aidat (₺)',bold:true},{text:'Ödenen (₺)',bold:true},{text:'Fark',bold:true}],
+    ...rows.map(r=>[ String(r.flat), fmtTRY.format(r.due), fmtTRY.format(r.paid), fmtTRY.format(r.diff) ])
   ];
   const sumDue = rows.reduce((s,r)=>s+r.due,0);
   const sumPaid= rows.reduce((s,r)=>s+r.paid,0);
-  const sumExtra=rows.reduce((s,r)=>s+r.extra,0);
 
   const dd = {
     content:[
       {text:`Aylık İcmal — ${MONTHS_TR[+month-1]} ${year}`, style:'header'},
-      {table:{widths:['auto','*','*','*','*'], body}, layout:'lightHorizontalLines', margin:[0,10,0,10]},
-      {text:`Toplam Aidat: ${fmtTRY.format(sumDue)}    Toplam Ödeme: ${fmtTRY.format(sumPaid)}    Toplam Ek: ${fmtTRY.format(sumExtra)}    Fark: ${fmtTRY.format(sumPaid-sumDue)}`}
+      {table:{widths:['auto','*','*','*'], body}, layout:'lightHorizontalLines', margin:[0,10,0,10]},
+      {text:`Toplam Aidat: ${fmtTRY.format(sumDue)}    Toplam Ödeme: ${fmtTRY.format(sumPaid)}    Fark: ${fmtTRY.format(sumPaid-sumDue)}`}
     ],
     defaultStyle:{font:'Roboto'},
     styles:{ header:{fontSize:14,bold:true,margin:[0,0,0,8]} }
@@ -660,8 +657,6 @@ qs('#exportExpenses')?.addEventListener('click',()=>exportCollection('expenses')
 async function renderDashboard(){
   const box=qs('#dashboardSummary'); if(!box) return; box.innerHTML="";
   const [res,pays,exps]=await Promise.all([listResidents(),listPayments(),listExpenses()]);
-  // ✅ Dashboard 'Toplam Sakin' sadece aktif sakinleri içerir
-  const activeRes = (res||[]).filter(isResidentActive);
   // ✅ Dashboard 'Toplam Sakin' sadece aktif sakinleri içerir
   const activeRes = (res||[]).filter(isResidentActive);
   const totalP=pays.reduce((s,p)=>s+(+p.amount||0),0);
@@ -1725,6 +1720,52 @@ function feesToolbarHTML(){
   `;
 }
 
+function feesAidatPanelHTML(){
+  const years = Array.from({length: 8}, (_,i)=> new Date().getFullYear() - 4 + i);
+  const yearOpts = years.map(y=>`<option value="${y}">${y}</option>`).join('');
+  const monthOpts = `
+    <option value="01">Ocak</option><option value="02">Şubat</option><option value="03">Mart</option>
+    <option value="04">Nisan</option><option value="05">Mayıs</option><option value="06">Haziran</option>
+    <option value="07">Temmuz</option><option value="08">Ağustos</option><option value="09">Eylül</option>
+    <option value="10">Ekim</option><option value="11">Kasım</option><option value="12">Aralık</option>
+  `;
+  return `
+  <div class="panel">
+    <div class="panel-head">
+      <h3>Aidat / Ayarlamalar</h3>
+      <div class="row-gap" style="align-items:center">
+        <select id="feeYear" class="pill">${yearOpts}</select>
+        <select id="feeMonth" class="pill">${monthOpts}</select>
+        <input id="feeDefault" type="number" min="0" step="0.01" placeholder="Varsayılan (₺)" class="pill" style="width:160px">
+        <button id="feeApplyEmpty" class="btn outline admin-only">Boşlara uygula</button>
+        <button id="feeCopyNext" class="btn outline admin-only">İleri aya kopyala</button>
+        <button id="feeExportCSV" class="btn outline">CSV</button>
+        <button id="feeSave" class="btn primary admin-only">Kaydet</button>
+      </div>
+    </div>
+    <div class="mt">
+      <div class="row-gap" style="margin:8px 0 12px;flex-wrap:wrap">
+        <button id="feeAddFlat" class="btn outline admin-only">+ Daire ekle</button>
+        <span class="muted">Not: “Yeni Sakin Ata” ile eski kayıtlar silinmez; önceki sakin pasif yapılır.</span>
+      </div>
+      <div class="table-container">
+        <table class="tbl">
+          <thead>
+            <tr>
+              <th style="width:120px">Daire</th>
+              <th>Aktif Sakin</th>
+              <th style="width:160px">Aidat (₺)</th>
+              <th style="width:220px">İşlemler</th>
+            </tr>
+          </thead>
+          <tbody id="feesTbody"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>`;
+}
+
+
 function ymStr(y,m){ return `${y}-${m}`; }
 function nextYM(ym){
   const [y,m] = ym.split('-').map(Number);
@@ -1735,8 +1776,10 @@ function nextYM(ym){
 async function ensureFeesUI(){
   const box = qs('#fees'); if(!box) return;
   if(!qs('#feesTbody')){
-    box.innerHTML = feesToolbarHTML();
-    // Default selections
+    const wrap = qs('#feesTableWrap');
+    if(wrap) wrap.innerHTML = feesAidatPanelHTML();
+    else box.innerHTML = feesToolbarHTML();
+// Default selections
     const now = new Date();
     qs('#feeYear').value = String(now.getFullYear());
     qs('#feeMonth').value = String(now.getMonth()+1).padStart(2,'0');
