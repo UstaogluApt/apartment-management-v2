@@ -166,6 +166,19 @@
 <div class="panel-head"><h2>⚙️ Aidat / Ayarlar</h2><button class="btn primary admin-only hidden" id="setFee">📅 Ay Aidatı Tanımla</button></div>
 <p class="muted">Bu bölümden belirli aylar için aidat tutarlarını tanımlayabilirsiniz.</p>
 <div id="feesTableWrap"></div>
+<div class="panel mt" id="extraPaySettings">
+  <div class="panel-head">
+    <h3>➕ Yıllık Ek Ödeme</h3>
+    <div class="row-gap" style="flex-wrap:wrap">
+      <select id="extraPayYear"></select>
+      <input id="extraPayTitle" class="input" type="text" placeholder="Açıklama (örn. Asansör bakım)" style="min-width:220px">
+      <input id="extraPayAmount" class="input" type="number" min="0" step="0.01" placeholder="Daire başı yıllık tutar (₺)" style="width:220px">
+      <button class="btn admin-only" id="extraPaySave">Kaydet</button>
+    </div>
+  </div>
+  <p class="muted" style="margin:6px 0 0">Bu ek ödeme <b>daire başı</b> yıllık tutardır. Ödemeler sekmesinde <b>Tür: Extra</b> seçilerek tahsil edilir. Raporlarda ayrı gösterilir.</p>
+  <div class="muted" id="extraPayStatus" style="margin-top:8px"></div>
+</div>
 </div>
 </section>
 </main>
