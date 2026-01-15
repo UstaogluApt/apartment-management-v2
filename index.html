@@ -165,20 +165,30 @@
 <div class="panel">
 <div class="panel-head"><h2>⚙️ Aidat / Ayarlar</h2><button class="btn primary admin-only hidden" id="setFee">📅 Ay Aidatı Tanımla</button></div>
 <p class="muted">Bu bölümden belirli aylar için aidat tutarlarını tanımlayabilirsiniz.</p>
-<div id="feesTableWrap"></div>
-<div class="panel mt" id="extraPaySettings">
-  <div class="panel-head">
-    <h3>➕ Yıllık Ek Ödeme</h3>
-    <div class="row-gap" style="flex-wrap:wrap">
-      <select id="extraPayYear"></select>
-      <input id="extraPayTitle" class="input" type="text" placeholder="Açıklama (örn. Asansör bakım)" style="min-width:220px">
-      <input id="extraPayAmount" class="input" type="number" min="0" step="0.01" placeholder="Daire başı yıllık tutar (₺)" style="width:220px">
-      <button class="btn admin-only" id="extraPaySave">Kaydet</button>
+
+    <div class="card mt">
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap">
+        <h3 style="margin:0">Yıllık Ek Ödeme</h3>
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+          <label style="margin:0">Yıl
+            <select id="extraYear" style="min-width:120px"></select>
+          </label>
+        </div>
+      </div>
+      <div class="grid2 mt">
+        <label>Başlık / Açıklama
+          <input id="extraTitle" type="text" placeholder="Örn: Asansör Bakım / Demirbaş" />
+        </label>
+        <label>Daire başı yıllık tutar (₺)
+          <input id="extraAmount" type="number" step="0.01" min="0" placeholder="0" />
+        </label>
+      </div>
+      <div class="mt" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+        <button class="btn primary admin-only" id="extraSave" type="button">Kaydet</button>
+        <div class="muted" id="extraInfo"></div>
+      </div>
     </div>
-  </div>
-  <p class="muted" style="margin:6px 0 0">Bu ek ödeme <b>daire başı</b> yıllık tutardır. Ödemeler sekmesinde <b>Tür: Extra</b> seçilerek tahsil edilir. Raporlarda ayrı gösterilir.</p>
-  <div class="muted" id="extraPayStatus" style="margin-top:8px"></div>
-</div>
+    <div id="feesTableWrap"></div>
 </div>
 </section>
 </main>
