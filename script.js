@@ -624,7 +624,6 @@ async function getExtraPaymentForYear(year){
   // returns {amount,title,description} or null
   try{ return await getExtraPaymentDoc(year); }catch(e){ console.warn('extraPayments read failed', e); return null; }
 }
-,{merge:true}); }
 
 /* ===== Admin Info ===== */
 async function getAdminInfoDoc(){ const r=doc(db,'settings','adminInfo'); const s=await getDoc(r); return s.exists()?s.data():{}; }
