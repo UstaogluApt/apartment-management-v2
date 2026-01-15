@@ -445,42 +445,55 @@ async function generateFlatAnnualPDF(){
 
   const [residents, payments] = await Promise.all([getResidentsCached(), listPayments()]);
   const nameToFlat = new Map(residents.map(r=>[(r.name||'').trim().toLowerCase(), String(r.flatNo||'')]));
-  payments.forEach(r=>{ if(!r.flatNo && r.residentName){ const f = nameToFlat.get(r.residentName.trim().toLowerCase()); if(f) r._derivedFlatNo = f; } });
+  payments.forEach(p=>{ if(!p.flatNo && p.residentName){ const f = nameToFlat.get(p.residentName.trim().toLowerCase()); if(f) p._derivedFlatNo = f; } });
 
   const feesMap = await getYearFeesMap(year);
-  const extraCfg = await getExtraPaymentForYear(year);
-  const extraDue = +((extraCfg&&extraCfg.amount)||0);
-  const extraTitle = (extraCfg&&extraCfg.title)||'Ek Ödeme';
   const payIdx  = buildPaymentsIndex(payments);
-  const extraIdx= buildExtrasIndex(payments);
+
+  let totalDue=0, totalPaid=0;
 
   const body = [
-    [{text:'Ay',bold:true}, {text:'Aidat (₺)',bold:true}, {text:'Ödenen (₺)',bold:true}, {text:'Ek (₺)',bold:true}, {text:'Durum',bold:true}]
+    ['Ay','Borç (₺)','Ödeme (₺)','Kalan (₺)','Durum'].map(h=>({text:h,bold:true}))
   ];
-  let totalDue=0, totalPaid=0, totalExtra=0;
+
   for(let i=1;i<=12;i++){
     const mm = String(i).padStart(2,'0');
     const due = ((feesMap[flat]||{})[mm])||0;
     const paid = (payIdx[flat] && payIdx[flat][`${year}-${mm}`]) || 0;
-    const extra = (extraIdx[flat] && extraIdx[flat][`${year}-${mm}`]) || 0;
-    totalDue += due; totalPaid += paid; totalExtra += extra;
-    let label='x'; if(paid>=due && due>0) label='✓'; else if(paid>0&&paid<due) label='o'; else if(due===0&&paid>0) label='o';
+    const rem = Math.max(0, due - paid);
+
+    totalDue += due; totalPaid += paid;
+
+    // Durum rozeti (aidat bazlı)
+    let label='x';
+    if(due===0 && paid===0) label='-';
+    else if(paid>=due && due>0) label='✓';
+    else if(paid>0 && paid<due) label='o';
+
     let fill='#fee2e2', fontC='#991b1b';
     if(label==='✓'){ fill='#dcfce7'; fontC='#166534'; }
     else if(label==='o'){ fill='#fef9c3'; fontC='#854d0e'; }
     else if(label==='-'){ fill='#f1f5f9'; fontC='#475569'; }
-    body.push([ MONTHS_TR[i-1], fmtTRY.format(due), fmtTRY.format(paid), fmtTRY.format(extra), {text: label, alignment:'center', fillColor: fill, color: fontC, bold:true} ]);
+
+    body.push([
+      MONTHS_TR[i-1],
+      fmtTRY.format(due),
+      fmtTRY.format(paid),
+      fmtTRY.format(rem),
+      {text:label, alignment:'center', fillColor: fill, color: fontC, bold:true}
+    ]);
   }
 
   const dd = {
     content: [
       {text:`Yıllık Aidat Cetveli — Daire ${flat} — ${year}`, style:'header'},
-      {table:{widths:['*','*','*','*','*'], body}, layout:'lightHorizontalLines', margin:[0,10,0,10]},
-      {text:`Toplam Aidat: ${fmtTRY.format(totalDue)}    Toplam Ödeme: ${fmtTRY.format(totalPaid)}    Toplam Ek: ${fmtTRY.format(totalExtra)}    Genel Fark: ${fmtTRY.format((totalPaid+totalExtra)-(totalDue+extraDue))}`, margin:[0,6,0,0]}
+      {table:{widths:['*','*','*','*',40], body}, layout:'lightHorizontalLines', margin:[0,10,0,10]},
+      {text:`Toplam Aidat Borç: ${fmtTRY.format(totalDue)}    Toplam Aidat Ödeme: ${fmtTRY.format(totalPaid)}    Kalan: ${fmtTRY.format(Math.max(0,totalDue-totalPaid))}`, margin:[0,6,0,0]}
     ],
     defaultStyle:{ font:'Roboto' },
     styles:{ header:{fontSize:14,bold:true,margin:[0,0,0,8]} }
   };
+
   if(window.pdfMake && window.pdfMake.createPdf){
     window.pdfMake.createPdf(dd).download(`Daire-${flat}-${year}.pdf`);
   }else{
@@ -589,7 +602,7 @@ async function deleteAnnouncement(id){ if(currentRole!=='admin') throw new Error
 
 /* ===== Fees (Aidat) ===== */
 async function getFeesDoc(ym){ const r=doc(db,'fees',ym); const s=await getDoc(r); return s.exists()?{id:ym,...s.data()}:null; }
-async function setFeesDoc(ym,data){ if(currentRole!=='admin') throw new Error('Yetki yok'); const r=doc(db,'fees',ym); return setDoc(r,{ym, ...data, updatedAt:serverTimestamp(),updatedBy:currentUser?.uid||null}
+async function setFeesDoc(ym,data){ if(currentRole!=='admin') throw new Error('Yetki yok'); const r=doc(db,'fees',ym); return setDoc(r,{ym, ...data, updatedAt:serverTimestamp(),updatedBy:currentUser?.uid||null}); }
 
 /* ===== Extra Payments (Yıllık Ek Ödeme) ===== */
 async function getExtraPaymentDoc(year){
