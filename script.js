@@ -278,35 +278,52 @@ function buildExtrasIndex(payments){
 
 async function renderReportsTable(){
   const year = qs('#repYear')?.value || String(new Date().getFullYear());
-  const thead = qs('#repThead'); const tbody = qs('#repTbody'); const tfoot = qs('#repTfoot');
+  const thead = qs('#repThead'), tbody = qs('#repTbody'), tfoot = qs('#repTfoot');
   if(!thead||!tbody||!tfoot) return;
 
   const [residents, payments] = await Promise.all([getResidentsCached(), listPayments()]);
 
-  // Daire numarasını mümkün olduğunca tutarlı üret
-  const idToFlat   = new Map(residents.map(r=>[r.id, String(r.flatNo||'')]));
-  const nameToFlat = new Map(residents.filter(r=>r.fullName).map(r=>[String(r.fullName).trim().toLowerCase(), String(r.flatNo||'')]));
-  payments.forEach(p=>{
-    if(!p._derivedFlatNo){
-      if(p.flatNo!=null && String(p.flatNo).trim()!=='') p._derivedFlatNo = String(p.flatNo);
-      else if(p.residentId && idToFlat.get(p.residentId)) p._derivedFlatNo = idToFlat.get(p.residentId);
-      else if(p.residentName){
-        const f2 = nameToFlat.get(String(p.residentName).trim().toLowerCase());
-        if(f2) p._derivedFlatNo = f2;
-      }
+  // Daire no'yu ödemelere mümkün olduğunca güvenli bağla
+  const idToFlat = new Map((residents||[]).map(r=>[
+    r.id,
+    String(r.flatNo||r.flat||r.daire||'').trim()
+  ]));
+
+  // fullName/name üzerinden daire bulma (payments.residentName için)
+  const nameToFlat = new Map();
+  (residents||[]).forEach(r=>{
+    const nm = String((r.fullName||r.name||r.residentName||'')).trim().toLowerCase();
+    const f  = String(r.flatNo||r.flat||r.daire||'').trim();
+    if(nm && f && !nameToFlat.has(nm)) nameToFlat.set(nm, f);
+  });
+
+  (payments||[]).forEach(p=>{
+    const hasFlat = p.flatNo!=null && String(p.flatNo).trim()!=='';
+    if(hasFlat){
+      p._derivedFlatNo = String(p.flatNo).trim();
+      return;
+    }
+    if(p.residentId){
+      const f = idToFlat.get(p.residentId);
+      if(f) { p._derivedFlatNo = f; return; }
+    }
+    const rn = String(p.residentName||p.name||p.fullName||'').trim().toLowerCase();
+    if(rn){
+      const f2 = nameToFlat.get(rn);
+      if(f2) p._derivedFlatNo = f2;
     }
   });
 
   const feesMap = await getYearFeesMap(year);
   const flats   = collectFlatsFromResidentsAndFees(residents, feesMap);
 
-  // Sadece AİDAT ödemeleri (type='Due')
+  // SADECE AİDAT ödemeleri (type='Due') indexlenir
   const payIdx  = buildPaymentsIndex(payments);
 
   thead.innerHTML = `
     <tr>
       <th>Daire</th>
-      ${MONTHS_TR.map(m=>`<th>${m}</th>`).join('')}
+      ${MONTHS_TR.map((m)=>`<th>${m}</th>`).join('')}
       <th>Aidat Borç</th>
       <th>Aidat Ödeme</th>
       <th>Kalan</th>
@@ -320,108 +337,38 @@ async function renderReportsTable(){
       const due = ((feesMap[f]||{})[mm])||0;
       const paid = (payIdx[f] && payIdx[f][`${year}-${mm}`]) || 0;
       rowDue += due; rowPaid += paid;
-      return `<td class="num">${format(due)}</td>`;
-    }).join('');
+
+      const diff = paid - due;
+      const cls = diff<0 ? 'neg' : diff>0 ? 'pos' : '';
+      const tip = `Aidat: ${fmtTRY.format(due)}\nÖdeme: ${fmtTRY.format(paid)}\nFark: ${fmtTRY.format(diff)}`;
+
+      return `<td class="num ${cls}" title="${escAttr(tip)}">${fmtTRY.format(paid)}</td>`;
+    });
 
     sumDueAll += rowDue; sumPaidAll += rowPaid;
     const remain = rowDue - rowPaid;
-    const st = remain<=0 ? `<span class="badge ok">Tam</span>` : `<span class="badge warn">Eksik</span>`;
-    return `
-      <tr>
-        <td><b>${escapeHtml(f)}</b></td>
-        ${tds}
-        <td class="num"><b>${format(rowDue)}</b></td>
-        <td class="num"><b>${format(rowPaid)}</b></td>
-        <td class="num"><b>${format(remain)}</b> ${st}</td>
-      </tr>`;
+    return `<tr>
+      <td>${escHtml(f)}</td>
+      ${tds.join('')}
+      <td class="num">${fmtTRY.format(rowDue)}</td>
+      <td class="num">${fmtTRY.format(rowPaid)}</td>
+      <td class="num ${remain>0?'neg':remain<0?'pos':''}">${fmtTRY.format(remain)}</td>
+    </tr>`;
   }).join('');
 
-  tbody.innerHTML = rowsHTML || `<tr><td colspan="${1+MONTHS_TR.length+3}" class="muted">Kayıt bulunamadı.</td></tr>`;
+  tbody.innerHTML = rowsHTML;
 
-  const diffAll = sumDueAll - sumPaidAll;
+  const remainAll = sumDueAll - sumPaidAll;
   tfoot.innerHTML = `
     <tr>
-      <td><b>TOPLAM</b></td>
-      ${MONTHS_TR.map(()=>`<td></td>`).join('')}
-      <td class="num"><b>${format(sumDueAll)}</b></td>
-      <td class="num"><b>${format(sumPaidAll)}</b></td>
-      <td class="num"><b>${format(diffAll)}</b></td>
+      <td style="font-weight:700">Genel Toplam</td>
+      ${MONTHS_TR.map(()=>'<td></td>').join('')}
+      <td class="num" style="font-weight:700">${fmtTRY.format(sumDueAll)}</td>
+      <td class="num" style="font-weight:700">${fmtTRY.format(sumPaidAll)}</td>
+      <td class="num" style="font-weight:700;${remainAll>0?'color:#991b1b':remainAll<0?'color:#166534':''}">${fmtTRY.format(remainAll)}</td>
     </tr>`;
-
-  try{ enforceExportVisibility(); }catch{}
 }
 
-/* ==================== Ek Ödeme Raporu (Sadece Ek Ödeme Tablosu) ==================== */
-async function renderExtraReportTable(){
-  const ysel = qs('#extraRepYear');
-  const fsel = qs('#extraRepFee');
-  const tbody = qs('#extraRepTbody');
-  if(!ysel||!tbody) return;
-
-  const year = ysel.value || String(new Date().getFullYear());
-  const cfg = await getExtraPaymentForYear(year);
-  const amount = +((cfg&&cfg.amount)||0);
-  const title = (cfg&&cfg.title)||'Yıllık Ek Ödeme';
-
-  // Fee selector (tek kalem - yıllık)
-  if(fsel){
-    fsel.innerHTML = `<option value="YEARLY">${escapeHtml(title)} (${year})</option>`;
-    fsel.value = 'YEARLY';
-  }
-
-  const [residents, payments] = await Promise.all([getResidentsCached(), listPayments()]);
-  const feesMap = await getYearFeesMap(year);
-  const flats   = collectFlatsFromResidentsAndFees(residents, feesMap);
-
-  // Ek ödeme ödemeleri: type='Extra' ve yıl eşleşenler
-  const extraPaidByFlat = {};
-  payments.forEach(p=>{
-    if(String(p.type||'')!=='Extra') return;
-    const d = p.date ? String(p.date) : '';
-    if(!d.startsWith(String(year)+'-')) return;
-    const flat = String(p._derivedFlatNo || p.flatNo || '').trim();
-    if(!flat) return;
-    extraPaidByFlat[flat] = (extraPaidByFlat[flat]||0) + (+p.amount||0);
-  });
-
-  tbody.innerHTML = flats.map(f=>{
-    const due = amount;
-    const paid = extraPaidByFlat[f]||0;
-    const rem = due - paid;
-    const st = rem<=0 ? `<span class="badge ok">Tam</span>` : (paid>0 ? `<span class="badge warn">Kısmi</span>` : `<span class="badge bad">Ödenmedi</span>`);
-    return `<tr>
-      <td><b>${escapeHtml(f)}</b></td>
-      <td class="num">${format(due)}</td>
-      <td class="num">${format(paid)}</td>
-      <td class="num"><b>${format(rem)}</b></td>
-      <td>${st}</td>
-    </tr>`;
-  }).join('') || `<tr><td colspan="5" class="muted">Kayıt bulunamadı.</td></tr>`;
-}
-
-function ensureExtraReportYears(){
-  const ysel = qs('#extraRepYear');
-  if(!ysel || ysel.dataset.bound) return;
-  ysel.dataset.bound = '1';
-  ysel.innerHTML = yearsOptionsHTML(9);
-  ysel.value = String(new Date().getFullYear());
-  ysel.addEventListener('change', ()=>renderExtraReportTable());
-  qs('#extraRepFee')?.addEventListener('change', ()=>renderExtraReportTable());
-  qs('#extraRepExportCSV')?.addEventListener('click', ()=>exportExtraReportCSV());
-}
-
-function exportExtraReportCSV(){
-  const tbody = qs('#extraRepTbody');
-  const year = qs('#extraRepYear')?.value || '';
-  const title = qs('#extraRepFee')?.selectedOptions?.[0]?.textContent || 'Ek Ödeme';
-  if(!tbody) return;
-  const rows = Array.from(tbody.querySelectorAll('tr')).map(tr=>Array.from(tr.children).map(td=>td.textContent.trim()));
-  const header = ['Daire','Borç','Ödenen','Kalan','Durum'];
-  const csv = [header, ...rows].map(r=>r.map(v=>`"${String(v).replace(/"/g,'""')}"`).join(',')).join('\n');
-  downloadText(`ek_odeme_raporu_${year}.csv`, csv, 'text/csv;charset=utf-8');
-}
-
-/* ensure reports page binds extra report */
 
 
 function exportReportsCSV(){
@@ -437,126 +384,106 @@ function exportReportsCSV(){
 }
 
 
-async function generateFlatAnnualPDF(){
-  if(currentRole!=='admin') return;
-  const flat = qs('#repFlat')?.value;
+async function generateFlatAnnualPDF(flat){
   const year = qs('#repYear')?.value || String(new Date().getFullYear());
-  if(!flat){ alert('Daire seçin'); return; }
-
   const [residents, payments] = await Promise.all([getResidentsCached(), listPayments()]);
-  const nameToFlat = new Map(residents.map(r=>[(r.name||'').trim().toLowerCase(), String(r.flatNo||'')]));
-  payments.forEach(p=>{ if(!p.flatNo && p.residentName){ const f = nameToFlat.get(p.residentName.trim().toLowerCase()); if(f) p._derivedFlatNo = f; } });
-
   const feesMap = await getYearFeesMap(year);
-  const payIdx  = buildPaymentsIndex(payments);
 
-  let totalDue=0, totalPaid=0;
+  // only aidat payments
+  const payIdx = buildPaymentsIndex(payments);
+
+  const rows = MONTHS_TR.map((m,i)=>{
+    const mm = String(i+1).padStart(2,'0');
+    const due  = ((feesMap[String(flat)]||{})[mm]) || 0;
+    const paid = (payIdx[String(flat)] && payIdx[String(flat)][`${year}-${mm}`]) || 0;
+    const diff = paid - due;
+    return { m, due, paid, diff };
+  });
+
+  const totalDue  = rows.reduce((s,r)=>s+r.due,0);
+  const totalPaid = rows.reduce((s,r)=>s+r.paid,0);
+  const totalDiff = totalPaid - totalDue;
 
   const body = [
-    ['Ay','Borç (₺)','Ödeme (₺)','Kalan (₺)','Durum'].map(h=>({text:h,bold:true}))
+    [{text:'Ay',bold:true},{text:'Borç (₺)',bold:true},{text:'Ödenen (₺)',bold:true},{text:'Fark (₺)',bold:true}],
+    ...rows.map(r=>[
+      r.m,
+      fmtTRY.format(r.due),
+      fmtTRY.format(r.paid),
+      fmtTRY.format(r.diff)
+    ]),
+    [{text:'Toplam',bold:true}, fmtTRY.format(totalDue), fmtTRY.format(totalPaid), {text:fmtTRY.format(totalDiff), bold:true}]
   ];
 
-  for(let i=1;i<=12;i++){
-    const mm = String(i).padStart(2,'0');
-    const due = ((feesMap[flat]||{})[mm])||0;
-    const paid = (payIdx[flat] && payIdx[flat][`${year}-${mm}`]) || 0;
-    const rem = Math.max(0, due - paid);
-
-    totalDue += due; totalPaid += paid;
-
-    // Durum rozeti (aidat bazlı)
-    let label='x';
-    if(due===0 && paid===0) label='-';
-    else if(paid>=due && due>0) label='✓';
-    else if(paid>0 && paid<due) label='o';
-
-    let fill='#fee2e2', fontC='#991b1b';
-    if(label==='✓'){ fill='#dcfce7'; fontC='#166534'; }
-    else if(label==='o'){ fill='#fef9c3'; fontC='#854d0e'; }
-    else if(label==='-'){ fill='#f1f5f9'; fontC='#475569'; }
-
-    body.push([
-      MONTHS_TR[i-1],
-      fmtTRY.format(due),
-      fmtTRY.format(paid),
-      fmtTRY.format(rem),
-      {text:label, alignment:'center', fillColor: fill, color: fontC, bold:true}
-    ]);
-  }
-
-  const dd = {
+  const docDef = {
     content: [
-      {text:`Yıllık Aidat Cetveli — Daire ${flat} — ${year}`, style:'header'},
-      {table:{widths:['*','*','*','*',40], body}, layout:'lightHorizontalLines', margin:[0,10,0,10]},
-      {text:`Toplam Aidat Borç: ${fmtTRY.format(totalDue)}    Toplam Aidat Ödeme: ${fmtTRY.format(totalPaid)}    Kalan: ${fmtTRY.format(Math.max(0,totalDue-totalPaid))}`, margin:[0,6,0,0]}
+      {text:`${flat} - ${year} Yıllık Aidat Cetveli`, style:'h'},
+      {text:`(Sadece aidat)`, margin:[0,0,0,8]},
+      {table:{headerRows:1, widths:['*','auto','auto','auto'], body}}
     ],
-    defaultStyle:{ font:'Roboto' },
-    styles:{ header:{fontSize:14,bold:true,margin:[0,0,0,8]} }
+    styles:{ h:{fontSize:16,bold:true} },
+    defaultStyle:{ fontSize:10 }
   };
 
-  if(window.pdfMake && window.pdfMake.createPdf){
-    window.pdfMake.createPdf(dd).download(`Daire-${flat}-${year}.pdf`);
-  }else{
-    alert('PDF motoru (pdfmake) yüklenemedi.');
-  }
+  pdfMake.createPdf(docDef).download(`${flat}_${year}_aidat.pdf`);
 }
+
 
 
 
 
 async function generateMonthlySummaryPDF(){
-  if(currentRole!=='admin') return;
-  const year = qs('#repMonthlyYear')?.value || qs('#repYear')?.value || String(new Date().getFullYear());
-  const month = qs('#repMonthlyMonth')?.value || String(new Date().getMonth()+1).padStart(2,'0');
-  const ym = `${year}-${month}`;
+  const year = qs('#sumYear')?.value || String(new Date().getFullYear());
+  const mm   = qs('#sumMonth')?.value || String(new Date().getMonth()+1).padStart(2,'0');
 
   const [residents, payments] = await Promise.all([getResidentsCached(), listPayments()]);
-  const nameToFlat = new Map(residents.map(r=>[(r.name||'').trim().toLowerCase(), String(r.flatNo||'')]));
-  payments.forEach(r=>{
-    if(!r.flatNo && r.residentName){
-      const f = nameToFlat.get(r.residentName.trim().toLowerCase());
-      if(f) r._derivedFlatNo = f;
-    }
-  });
+  const feesDoc = await getFeesDoc(`${year}-${mm}`);
+  const def = +((feesDoc&&feesDoc.defaultAmount)||0);
+  const items = (feesDoc&&feesDoc.items)||{};
 
-  const fdoc = await getFeesDoc(ym);
-  const defaultAmount = +((fdoc&&fdoc.defaultAmount)||0);
-  const items = (fdoc&&fdoc.items)||{};
+  const flats = Array.from(new Set(
+    (residents||[]).map(r=>String(r.flatNo||'').trim()).filter(Boolean)
+      .concat(Object.keys(items||{}))
+  )).sort((a,b)=> (+a||9999) - (+b||9999));
 
-  const flats = Array.from(new Set([
-    ...residents.map(r=> String(r.flatNo||'').trim()).filter(Boolean),
-    ...Object.keys(items)
-  ])).sort((a,b)=> (''+a).localeCompare(''+b,'tr',{numeric:true}));
+  // Aidat ödemeleri: sadece Due
+  const payIdx = buildPaymentsIndex(payments);
+  const ym = `${year}-${mm}`;
 
-  const payIdx  = buildPaymentsIndex(payments);
-    const rows = flats.map(f=>{
-    const due = (items[f]!=null) ? +items[f] : defaultAmount;
+  const rows = flats.map(f=>{
+    const due = items[f]!=null ? +items[f] : def;
     const paid = (payIdx[f] && payIdx[f][ym]) || 0;
-    return { flat:f, due, paid, diff: paid - due };
+    const remain = (+due||0) - (+paid||0);
+    return { f, due:+due||0, paid:+paid||0, remain };
   });
+
+  const totalDue = rows.reduce((s,r)=>s+r.due,0);
+  const totalPaid= rows.reduce((s,r)=>s+r.paid,0);
 
   const body = [
-    [{text:'Daire',bold:true},{text:'Aidat (₺)',bold:true},{text:'Ödenen (₺)',bold:true},{text:'Fark',bold:true}],
-    ...rows.map(r=>[ String(r.flat), fmtTRY.format(r.due), fmtTRY.format(r.paid), fmtTRY.format(r.diff) ])
+    [{text:'Daire',bold:true},{text:'Borç (₺)',bold:true},{text:'Ödenen (₺)',bold:true},{text:'Kalan (₺)',bold:true}],
+    ...rows.map(r=>[
+      r.f,
+      fmtTRY.format(r.due),
+      fmtTRY.format(r.paid),
+      fmtTRY.format(r.remain)
+    ]),
+    [{text:'Toplam',bold:true}, fmtTRY.format(totalDue), fmtTRY.format(totalPaid), fmtTRY.format(totalDue-totalPaid)]
   ];
-  const sumDue = rows.reduce((s,r)=>s+r.due,0);
-  const sumPaid= rows.reduce((s,r)=>s+r.paid,0);
 
-  const dd = {
-    content:[
-      {text:`Aylık İcmal — ${MONTHS_TR[+month-1]} ${year}`, style:'header'},
-      {table:{widths:['auto','*','*','*'], body}, layout:'lightHorizontalLines', margin:[0,10,0,10]},
-      {text:`Toplam Aidat: ${fmtTRY.format(sumDue)}    Toplam Ödeme: ${fmtTRY.format(sumPaid)}    Fark: ${fmtTRY.format(sumPaid-sumDue)}`}
+  const docDef = {
+    content: [
+      {text:`${year}-${mm} Aylık Aidat İcmali`, style:'h'},
+      {text:`(Sadece aidat)`, margin:[0,0,0,8]},
+      {table:{headerRows:1, widths:['*','auto','auto','auto'], body}}
     ],
-    defaultStyle:{font:'Roboto'},
-    styles:{ header:{fontSize:14,bold:true,margin:[0,0,0,8]} }
+    styles:{ h:{fontSize:16,bold:true} },
+    defaultStyle:{ fontSize:10 }
   };
-  if(window.pdfMake && window.pdfMake.createPdf){
-    window.pdfMake.createPdf(dd).download(`Aylik-Icmal-${ym}.pdf`);
-  }else{
-    alert('PDF motoru (pdfmake) yüklenemedi.');
-  }
+
+  pdfMake.createPdf(docDef).download(`${year}-${mm}_aidat_icmal.pdf`);
 }
+
 
 
 
@@ -573,7 +500,7 @@ qs('#btnDashboard')?.addEventListener('click',()=>showPage('dashboard'));
 qs('#btnResidents')?.addEventListener('click',async ()=>{ showPage('residents'); await renderResidentsTable(); });
 qs('#btnPayments')?.addEventListener('click',async ()=>{ showPage('payments'); await ensurePaymentsUI(); await renderPaymentsTable(); });
 qs('#btnExpenses')?.addEventListener('click',async ()=>{ showPage('expenses'); await ensureExpensesUI(); await renderExpensesTable(); });
-qs('#btnReports')?.addEventListener('click',async ()=>{ showPage('reports'); await (ensureReportsUI?.()||Promise.resolve()); await (renderReportsTable?.()||Promise.resolve()); try{ ensureExtraReportYears(); await renderExtraReportTable(); }catch(e){ console.error(e);} });
+qs('#btnReports')?.addEventListener('click',async ()=>{ showPage('reports'); await ensureReportsUI?.(); await renderReportsTable?.(); });
 qs('#btnFees')?.addEventListener('click',async ()=>{ showPage('fees'); await ensureFeesUI(); await renderFeesTable(); });
 
 /* ==================== Firestore wrappers ==================== */
@@ -599,28 +526,7 @@ async function deleteAnnouncement(id){ if(currentRole!=='admin') throw new Error
 
 /* ===== Fees (Aidat) ===== */
 async function getFeesDoc(ym){ const r=doc(db,'fees',ym); const s=await getDoc(r); return s.exists()?{id:ym,...s.data()}:null; }
-async function setFeesDoc(ym,data){ if(currentRole!=='admin') throw new Error('Yetki yok'); const r=doc(db,'fees',ym); return setDoc(r,{ym, ...data, updatedAt:serverTimestamp(),updatedBy:currentUser?.uid||null}); }
-
-/* ===== Extra Payments (Yıllık Ek Ödeme) ===== */
-async function getExtraPaymentDoc(year){
-  const id = String(year);
-  const r = doc(db,'extraPayments', id);
-  const s = await getDoc(r);
-  return s.exists() ? { id, ...s.data() } : null;
-}
-async function setExtraPaymentDoc(year, data){
-  if(currentRole!=='admin') throw new Error('Yetki yok');
-  const id = String(year);
-  await setDoc(
-    doc(db,'extraPayments', id),
-    { year: Number(year), ...data, updatedAt: serverTimestamp(), updatedBy: currentUser?.uid || null },
-    { merge: true }
-  );
-}
-async function getExtraPaymentForYear(year){
-  // returns {amount,title,description} or null
-  try{ return await getExtraPaymentDoc(year); }catch(e){ console.warn('extraPayments read failed', e); return null; }
-}
+async function setFeesDoc(ym,data){ if(currentRole!=='admin') throw new Error('Yetki yok'); const r=doc(db,'fees',ym); return setDoc(r,{ym, ...data, updatedAt:serverTimestamp(),updatedBy:currentUser?.uid||null},{merge:true}); }
 
 /* ===== Admin Info ===== */
 async function getAdminInfoDoc(){ const r=doc(db,'settings','adminInfo'); const s=await getDoc(r); return s.exists()?s.data():{}; }
@@ -657,12 +563,10 @@ qs('#exportExpenses')?.addEventListener('click',()=>exportCollection('expenses')
 async function renderDashboard(){
   const box=qs('#dashboardSummary'); if(!box) return; box.innerHTML="";
   const [res,pays,exps]=await Promise.all([listResidents(),listPayments(),listExpenses()]);
-  // ✅ Dashboard 'Toplam Sakin' sadece aktif sakinleri içerir
-  const activeRes = (res||[]).filter(isResidentActive);
   const totalP=pays.reduce((s,p)=>s+(+p.amount||0),0);
   const totalE=exps.reduce((s,p)=>s+(+p.amount||0),0);
   const items=[
-    {title:'Toplam Sakin', val: activeRes.length},
+    {title:'Toplam Sakin', val: res.length},
     {title:'Toplam Ödeme', val: fmtTRY.format(totalP)},
     {title:'Toplam Gider',  val: fmtTRY.format(totalE)},
     {title:'Bakiye',       val: fmtTRY.format(totalP-totalE)}
@@ -1701,70 +1605,9 @@ function feesToolbarHTML(){
       </div>
     </div>
   </div>
-
-  <div class="panel" style="margin-top:14px">
-    <div class="panel-head">
-      <h3>➕ Yıllık Ek Ödeme</h3>
-      <div class="row-gap" style="align-items:center;flex-wrap:wrap">
-        <select id="extraYear" class="pill"></select>
-        <input id="extraTitle" class="pill" placeholder="Açıklama (örn: Asansör yenileme)" style="min-width:260px">
-        <input id="extraAmount" type="number" min="0" step="0.01" class="pill" placeholder="Daire başı yıllık (₺)" style="width:220px">
-        <button id="extraSave" class="btn primary admin-only">Kaydet</button>
-      </div>
-    </div>
-    <p class="muted" style="margin:6px 0 0">Bu tutar daire başı <b>yıllık</b> ek ödeme borcu olarak raporlara eklenir. Ek ödeme tahsilatları “Ödeme Ekle” ekranında <b>Tür: Ek Ödeme</b> seçilerek yapılır.</p>
-    <div id="extraInfo" class="muted" style="margin-top:10px"></div>
-  </div>
-
   <script>/* preselect current */</script>
   `;
 }
-
-function feesAidatPanelHTML(){
-  const years = Array.from({length: 8}, (_,i)=> new Date().getFullYear() - 4 + i);
-  const yearOpts = years.map(y=>`<option value="${y}">${y}</option>`).join('');
-  const monthOpts = `
-    <option value="01">Ocak</option><option value="02">Şubat</option><option value="03">Mart</option>
-    <option value="04">Nisan</option><option value="05">Mayıs</option><option value="06">Haziran</option>
-    <option value="07">Temmuz</option><option value="08">Ağustos</option><option value="09">Eylül</option>
-    <option value="10">Ekim</option><option value="11">Kasım</option><option value="12">Aralık</option>
-  `;
-  return `
-  <div class="panel">
-    <div class="panel-head">
-      <h3>Aidat / Ayarlamalar</h3>
-      <div class="row-gap" style="align-items:center">
-        <select id="feeYear" class="pill">${yearOpts}</select>
-        <select id="feeMonth" class="pill">${monthOpts}</select>
-        <input id="feeDefault" type="number" min="0" step="0.01" placeholder="Varsayılan (₺)" class="pill" style="width:160px">
-        <button id="feeApplyEmpty" class="btn outline admin-only">Boşlara uygula</button>
-        <button id="feeCopyNext" class="btn outline admin-only">İleri aya kopyala</button>
-        <button id="feeExportCSV" class="btn outline">CSV</button>
-        <button id="feeSave" class="btn primary admin-only">Kaydet</button>
-      </div>
-    </div>
-    <div class="mt">
-      <div class="row-gap" style="margin:8px 0 12px;flex-wrap:wrap">
-        <button id="feeAddFlat" class="btn outline admin-only">+ Daire ekle</button>
-        <span class="muted">Not: “Yeni Sakin Ata” ile eski kayıtlar silinmez; önceki sakin pasif yapılır.</span>
-      </div>
-      <div class="table-container">
-        <table class="tbl">
-          <thead>
-            <tr>
-              <th style="width:120px">Daire</th>
-              <th>Aktif Sakin</th>
-              <th style="width:160px">Aidat (₺)</th>
-              <th style="width:220px">İşlemler</th>
-            </tr>
-          </thead>
-          <tbody id="feesTbody"></tbody>
-        </table>
-      </div>
-    </div>
-  </div>`;
-}
-
 
 function ymStr(y,m){ return `${y}-${m}`; }
 function nextYM(ym){
@@ -1776,52 +1619,11 @@ function nextYM(ym){
 async function ensureFeesUI(){
   const box = qs('#fees'); if(!box) return;
   if(!qs('#feesTbody')){
-    const wrap = qs('#feesTableWrap');
-    if(wrap) wrap.innerHTML = feesAidatPanelHTML();
-    else box.innerHTML = feesToolbarHTML();
-// Default selections
+    box.innerHTML = feesToolbarHTML();
+    // Default selections
     const now = new Date();
     qs('#feeYear').value = String(now.getFullYear());
     qs('#feeMonth').value = String(now.getMonth()+1).padStart(2,'0');
-
-    // Extra payments UI
-    const extraYearSel = qs('#extraYear');
-    if(extraYearSel){
-      extraYearSel.innerHTML = yearsOptionsHTML(9);
-      extraYearSel.value = String(now.getFullYear());
-      const loadExtraUI = async ()=>{
-        const y = extraYearSel.value;
-        const docx = await getExtraPaymentForYear(y);
-        qs('#extraTitle').value = (docx?.title || '');
-        qs('#extraAmount').value = (docx?.amount ?? '');
-        const info = qs('#extraInfo');
-        if(info){
-          if(docx && (docx.amount || docx.title || docx.description)){
-            info.innerHTML = `Kayıtlı: <b>${y}</b> — ${docx.title?docx.title+' — ':''}<b>${fmtTRY.format(+docx.amount||0)}</b> (daire başı / yıl)`;
-          }else{
-            info.innerHTML = `Bu yıl için ek ödeme tanımı yok.`;
-          }
-        }
-      };
-      extraYearSel.addEventListener('change', loadExtraUI);
-
-      qs('#extraSave')?.addEventListener('click', async ()=>{
-        if(currentRole!=='admin'){ alert('Yetki yok'); return; }
-        const y = extraYearSel.value;
-        const title = (qs('#extraTitle')?.value || '').trim();
-        const amount = +(qs('#extraAmount')?.value || 0);
-        if(!(amount>=0)){ alert('Tutar geçersiz'); return; }
-        await setExtraPaymentDoc(y, { title, amount });
-        await loadExtraUI();
-        alert('Ek ödeme kaydedildi.');
-        // reports page might be open
-        try{ await renderReportsTable(); }catch(e){}
-      });
-
-      // initial
-      loadExtraUI();
-    }
-
 
     const onChange = async ()=>{ await loadFeesForSelectors(); await renderFeesTable(); };
     qs('#feeYear')?.addEventListener('change', onChange);
