@@ -2268,3 +2268,92 @@ onAuthStateChanged(auth, async (user)=>{
 
 /* ==================== Minor ==================== */
 try{ (function(){const __el=document.getElementById('yearCopy'); if(__el) __el.textContent=new Date().getFullYear();})() }catch{}
+
+/* ===============================
+   DUYURULAR DRAG & DROP SIRALAMA
+   =============================== */
+
+function enableAnnouncementDrag(){
+  const list = document.getElementById('announcementList');
+  if(!list) return;
+
+  let dragged = null;
+
+  list.querySelectorAll('.announce-item').forEach(item=>{
+    item.setAttribute('draggable','true');
+
+    item.addEventListener('dragstart', e=>{
+      dragged = item;
+      item.classList.add('dragging');
+      e.dataTransfer.effectAllowed = 'move';
+    });
+
+    item.addEventListener('dragend', ()=>{
+      item.classList.remove('dragging');
+    });
+
+    item.addEventListener('dragover', e=>{
+      e.preventDefault();
+
+      const after = getDragAfterElement(list, e.clientY);
+
+      if(after == null)
+        list.appendChild(dragged);
+      else
+        list.insertBefore(dragged, after);
+    });
+  });
+}
+
+function getDragAfterElement(container, y){
+  const els = [...container.querySelectorAll('.announce-item:not(.dragging)')];
+
+  return els.reduce((closest, child)=>{
+    const box = child.getBoundingClientRect();
+    const offset = y - box.top - box.height / 2;
+
+    if(offset < 0 && offset > closest.offset){
+      return { offset, element: child };
+    } else {
+      return closest;
+    }
+  }, { offset: Number.NEGATIVE_INFINITY }).element;
+}
+
+// Yeni sırayı Firestore’a yaz
+async function saveAnnouncementOrder(){
+  const list = document.getElementById('announcementList');
+
+  const items = [...list.querySelectorAll('.announce-item')]
+    .map((el, index)=>({
+      id: el.dataset.id,
+      order: index
+    }));
+
+  const batch = writeBatch(db);
+
+  items.forEach(it=>{
+    const ref = doc(db, 'announcements', it.id);
+    batch.update(ref, { sortOrder: it.order });
+  });
+
+  await batch.commit();
+}
+
+// Liste her yenilendiğinde drag aktif olsun
+const annObserver = new MutationObserver(()=>{
+  enableAnnouncementDrag();
+
+  const list = document.getElementById('announcementList');
+  if(!list) return;
+
+  list.querySelectorAll('.announce-item').forEach(el=>{
+    el.addEventListener('drop', saveAnnouncementOrder);
+  });
+});
+
+document.addEventListener('DOMContentLoaded', ()=>{
+  const target = document.getElementById('announcementList');
+  if(target)
+    annObserver.observe(target, { childList:true });
+});
