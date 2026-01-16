@@ -38,25 +38,6 @@ const hide = (el)=> el && el.classList.add('hidden');
 const fmtTRY = new Intl.NumberFormat('tr-TR', { style:'currency', currency:'TRY' });
 const fmtDate = (v)=> { if(!v) return "-"; const d=v instanceof Date?v:new Date(v); return d.toLocaleDateString('tr-TR',{year:'numeric',month:'short',day:'numeric'}); };
 
-// Ortak para formatlayıcı (raporlar vb. yerlerde kullanılır)
-function format(n){
-  return fmtTRY.format(+n || 0);
-}
-
-function escapeHtml(value){
-  return String(value ?? "")
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#039;");
-}
-
-function tipAttr(str){
-  // Tooltip attribute-safe string (keeps line breaks)
-  return escapeHtml(str).replace(/\n/g, "&#10;");
-}
-
 function setInputValue(form, selector, value){
   if(!form) return;
   const el = form.querySelector(selector);
@@ -195,24 +176,6 @@ function trToAscii(str){
 
 /* ==================== Reports (Yıllık Aidat Takip Cetveli + PDF) ==================== */
 const MONTHS_TR = ['Ocak','Şubat','Mart','Nisan','Mayıs','Haziran','Temmuz','Ağustos','Eylül','Ekim','Kasım','Aralık'];
-
-function monthCellClass(due, paid){
-  const d = +due || 0;
-  const p = +paid || 0;
-  if(d<=0 && p<=0) return 'cell-none';
-  if(p >= d && d > 0) return 'cell-ok';
-  if(p > 0 && p < d) return 'cell-partial';
-  return 'cell-bad';
-}
-
-function monthStatusIcon(due, paid){
-  const d = +due || 0;
-  const p = +paid || 0;
-  if(d<=0 && p<=0) return '–';
-  if(p >= d && d > 0) return '✓';
-  if(p > 0 && p < d) return '●';
-  return '✕';
-}
 
 function yearsOptionsHTML(span=9){
   const y0 = new Date().getFullYear();
@@ -364,13 +327,7 @@ async function renderReportsTable(){
       const due = ((feesMap[f]||{})[mm])||0;
       const paid = (payIdx[f] && payIdx[f][`${year}-${mm}`]) || 0;
       rowDue += due; rowPaid += paid;
-      const cls = monthCellClass(due, paid);
-      const icon = monthStatusIcon(due, paid);
-      const remM = Math.max(0, (+due||0) - (+paid||0));
-      const tip = `Aidat: ${format(due)}
-Ödenen: ${format(paid)}
-Kalan: ${format(remM)}`;
-      return `<td class=\"num money month-cell ${cls}\" data-tip=\"${tipAttr(tip)}\"><span class=\"m-ic\">${icon}</span><span class=\"m-amt\">${format(due)}</span></td>`;
+      return `<td class="num">${format(due)}</td>`;
     }).join('');
 
     sumDueAll += rowDue; sumPaidAll += rowPaid;
@@ -410,7 +367,7 @@ async function renderExtraReportTable(){
 
   const year = ysel.value || String(new Date().getFullYear());
   const cfg = await getExtraPaymentForYear(year);
-  const amount = +((cfg&&cfg.amount)||0);
+  const defaultAmount = getExtraDueForFlat(cfg, "");
   const title = (cfg&&cfg.title)||'Yıllık Ek Ödeme';
 
   // Fee selector (tek kalem - yıllık)
@@ -435,7 +392,7 @@ async function renderExtraReportTable(){
   });
 
   tbody.innerHTML = flats.map(f=>{
-    const due = amount;
+    const due = getExtraDueForFlat(cfg, f);
     const paid = extraPaidByFlat[f]||0;
     const rem = due - paid;
     const st = rem<=0 ? `<span class="badge ok">Tam</span>` : (paid>0 ? `<span class="badge warn">Kısmi</span>` : `<span class="badge bad">Ödenmedi</span>`);
@@ -671,8 +628,21 @@ async function setExtraPaymentDoc(year, data){
   );
 }
 async function getExtraPaymentForYear(year){
-  // returns {amount,title,description} or null
+  // returns extra payment config for year or null
   try{ return await getExtraPaymentDoc(year); }catch(e){ console.warn('extraPayments read failed', e); return null; }
+}
+
+// Helper: per-flat due amount (supports legacy fields)
+function getExtraDueForFlat(cfg, flat){
+  const f = String(flat||'').trim();
+  const map = (cfg && (cfg.amountsByFlat || cfg.amounts || cfg.duesByFlat)) || {};
+  if (f && Object.prototype.hasOwnProperty.call(map, f)){
+    const v = +map[f];
+    return (isFinite(v) && v>=0) ? v : 0;
+  }
+  const def = cfg?.amountDefault ?? cfg?.amount ?? 0;
+  const dv = +def;
+  return (isFinite(dv) && dv>=0) ? dv : 0;
 }
 
 /* ===== Admin Info ===== */
@@ -710,6 +680,8 @@ qs('#exportExpenses')?.addEventListener('click',()=>exportCollection('expenses')
 async function renderDashboard(){
   const box=qs('#dashboardSummary'); if(!box) return; box.innerHTML="";
   const [res,pays,exps]=await Promise.all([listResidents(),listPayments(),listExpenses()]);
+  // ✅ Dashboard 'Toplam Sakin' sadece aktif sakinleri içerir
+  const activeRes = (res||[]).filter(isResidentActive);
   // ✅ Dashboard 'Toplam Sakin' sadece aktif sakinleri içerir
   const activeRes = (res||[]).filter(isResidentActive);
   const totalP=pays.reduce((s,p)=>s+(+p.amount||0),0);
@@ -1761,7 +1733,8 @@ function feesToolbarHTML(){
       <div class="row-gap" style="align-items:center;flex-wrap:wrap">
         <select id="extraYear" class="pill"></select>
         <input id="extraTitle" class="pill" placeholder="Açıklama (örn: Asansör yenileme)" style="min-width:260px">
-        <input id="extraAmount" type="number" min="0" step="0.01" class="pill" placeholder="Daire başı yıllık (₺)" style="width:220px">
+        <input id="extraAmount" type="number" min="0" step="0.01" class="pill" placeholder="Varsayılan (₺)" style="width:220px">
+        <button id="extraDuesEdit" class="btn outline admin-only" title="Daire bazlı tutarları düzenle">🏠 Daire Bazlı</button>
         <button id="extraSave" class="btn primary admin-only">Kaydet</button>
       </div>
     </div>
@@ -1802,7 +1775,9 @@ async function ensureFeesUI(){
         const info = qs('#extraInfo');
         if(info){
           if(docx && (docx.amount || docx.title || docx.description)){
-            info.innerHTML = `Kayıtlı: <b>${y}</b> — ${docx.title?docx.title+' — ':''}<b>${fmtTRY.format(+docx.amount||0)}</b> (daire başı / yıl)`;
+            const defAmt = getExtraDueForFlat(docx, '');
+            const ovCount = Object.keys((docx?.amountsByFlat||{})).length;
+            info.innerHTML = `Kayıtlı: <b>${y}</b> — ${docx.title?docx.title+' — ':''}<b>${fmtTRY.format(defAmt)}</b> (varsayılan / yıl) ${ovCount?`— <b>${ovCount}</b> dairede özel tutar`:''}`;
           }else{
             info.innerHTML = `Bu yıl için ek ödeme tanımı yok.`;
           }
@@ -1823,7 +1798,12 @@ async function ensureFeesUI(){
         try{ await renderReportsTable(); }catch(e){}
       });
 
-      // initial
+      qs('#extraDuesEdit')?.addEventListener('click', async ()=>{
+        if(currentRole!=='admin'){ alert('Yetki yok'); return; }
+        const y = extraYearSel.value;
+        await openExtraDuesEditorForYear(y);
+      });
+// initial
       loadExtraUI();
     }
 
@@ -2011,6 +1991,83 @@ async function exportFeesCSV(){
   a.click();
 }
 
+
+
+/* ==================== Extra Dues Modal (Per-Flat Yearly Extra Payment) ==================== */
+let extraDuesEditingYear = null;
+async function openExtraDuesEditorForYear(year){
+  extraDuesEditingYear = String(year||'').trim() || String(new Date().getFullYear());
+  const cfg = (await getExtraPaymentForYear(extraDuesEditingYear)) || {};
+  const defAmt = getExtraDueForFlat(cfg, '');
+  const title = (cfg?.title || 'Yıllık Ek Ödeme');
+
+  // Title + hint
+  const t = qs('#extraDuesTitle');
+  if(t) t.textContent = `Daire Bazlı Tutarlar — ${title} (${extraDuesEditingYear})`;
+  const hint = qs('#extraDuesHint');
+  if(hint) hint.textContent = `Varsayılan tutar: ${fmtTRY.format(defAmt)}. Boş bırakılan daireler varsayılanı kullanır.`;
+
+  const bulk = qs('#extraDuesBulk');
+  if(bulk) bulk.value = '';
+
+  const tbody = qs('#extraDuesTbody');
+  if(!tbody){ alert('Daire bazlı tutar tablosu bulunamadı.'); return; }
+
+  const [residents, feesMap] = await Promise.all([getResidentsCached(), getYearFeesMap(extraDuesEditingYear)]);
+  const flats = collectFlatsFromResidentsAndFees(residents, feesMap);
+
+  const map = (cfg?.amountsByFlat || {});
+  tbody.innerHTML = flats.map(f=>{
+    const name = getActiveResidentNameForFlat(f, residents) || '—';
+    const hasOverride = Object.prototype.hasOwnProperty.call(map, String(f));
+    const val = hasOverride ? (+(map[String(f)])||0) : '';
+    return `
+      <tr>
+        <td><b>${escapeHtml(f)}</b></td>
+        <td>${escapeHtml(name)}</td>
+        <td>
+          <input class="pill extra-due-inp" data-flat="${escapeHtml(f)}" type="number" min="0" step="0.01" placeholder="${defAmt?`Boş= ${defAmt}`:'Boş= varsayılan'}" style="width:200px" value="${val}">
+        </td>
+      </tr>`;
+  }).join('') || `<tr><td colspan="3" class="muted" style="text-align:center;padding:14px">Daire bulunamadı.</td></tr>`;
+
+  // Bind buttons once
+  const applyBtn = qs('#extraDuesApplyAll');
+  if(applyBtn && !applyBtn.dataset.bound){
+    applyBtn.dataset.bound='1';
+    applyBtn.addEventListener('click', ()=>{
+      const v = +(qs('#extraDuesBulk')?.value || 0);
+      if(!(v>=0)) { alert('Tutar geçersiz'); return; }
+      qsa('#extraDuesTbody .extra-due-inp').forEach(inp=>{ inp.value = String(v); });
+    });
+  }
+
+  const saveBtn = qs('#extraDuesSave');
+  if(saveBtn && !saveBtn.dataset.bound){
+    saveBtn.dataset.bound='1';
+    saveBtn.addEventListener('click', async ()=>{
+      if(currentRole!=='admin'){ alert('Yetki yok'); return; }
+      if(!extraDuesEditingYear) return;
+      const newMap = {};
+      qsa('#extraDuesTbody .extra-due-inp').forEach(inp=>{
+        const flat = String(inp.getAttribute('data-flat')||'').trim();
+        const raw = String(inp.value||'').trim();
+        if(!flat) return;
+        if(raw==='') return; // empty => use default
+        const val = +raw;
+        newMap[flat] = (isFinite(val) && val>=0) ? val : 0;
+      });
+      await setExtraPaymentDoc(extraDuesEditingYear, { amountsByFlat: newMap });
+      closeModals();
+      // refresh fees + extra reports
+      try{ qs('#extraYear')?.dispatchEvent(new Event('change')); }catch(e){}
+      try{ await renderExtraReportTable(); }catch(e){}
+      alert('Daire bazlı tutarlar kaydedildi.');
+    });
+  }
+
+  openModal(modalSel('#modalExtraDues','#extraDuesModal'));
+}
 /* ==================== Modals ==================== */
 const backdrop = qs('#modalBackdrop');
 function openModal(sel){ const m=qs(sel); if(!m){ console.warn('Modal not found:', sel); return; } show(m); show(qs('#modalBackdrop')); }
