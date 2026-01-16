@@ -121,7 +121,11 @@ async function fetchRole(uid){
 function enforceExportVisibility(){
   const isAdmin = (currentRole === 'admin');
   // IDs we know
-  const ids = ['exportPayments','exportExpenses','payExportCSV','expExportCSV'];
+  const ids = [
+    'exportPayments','exportExpenses','payExportCSV','expExportCSV',
+    'exportPaymentsPDF','exportResidentsPDF','exportExpensesPDF',
+    'repExportCSV','repFlatPDF','repMonthlyPDF','extraRepExportCSV'
+  ];
   ids.forEach(id=>{
     const el = document.getElementById(id);
     if(!el) return;
@@ -137,7 +141,11 @@ function enforceExportVisibility(){
   // Generic text match fallback
   document.querySelectorAll('button, a').forEach(el=>{
     const text = (el.textContent || '').trim().toLowerCase();
-    if(text === 'csv' || text === 'json' || text.includes('csv') || text.includes('json')){
+    if(
+      text === 'csv' || text === 'json' || text === 'pdf' ||
+      text.includes('csv') || text.includes('json') || text.includes('pdf') ||
+      text.includes('dışa aktar') || text.includes('indir')
+    ){
       if(isAdmin){
         el.style.display='';
         el.removeAttribute('aria-disabled');
@@ -418,6 +426,10 @@ function ensureExtraReportYears(){
 }
 
 function exportExtraReportCSV(){
+  if(currentRole!=='admin'){
+    alert('Bu indirme/çıktı alma işlemi sadece admin için aktif.');
+    return;
+  }
   const tbody = qs('#extraRepTbody');
   const year = qs('#extraRepYear')?.value || '';
   const title = qs('#extraRepFee')?.selectedOptions?.[0]?.textContent || 'Ek Ödeme';
@@ -655,6 +667,10 @@ async function ensureAdminInfoDoc(){
 
 /* ==================== Export helpers ==================== */
 async function exportCollection(name){
+  if(currentRole!=='admin'){
+    alert('Bu indirme/çıktı alma işlemi sadece admin için aktif.');
+    return;
+  }
   const s=await getDocs(collection(db,name));
   const data=s.docs.map(d=>({id:d.id,...d.data()}));
   const blob=new Blob([JSON.stringify(data,null,2)],{type:'application/json'});
@@ -679,6 +695,17 @@ qs('#exportResidentsPDF')?.addEventListener('click', async ()=>{
   try{
     if(currentRole!=='admin') return alert('Bu işlem sadece admin için aktif.');
     await exportResidentsPDF();
+  }catch(e){
+    console.error(e);
+    alert('PDF oluşturulamadı. Konsolu kontrol edin.');
+  }
+});
+
+// Expenses PDF export (filtered view)
+qs('#exportExpensesPDF')?.addEventListener('click', async ()=>{
+  try{
+    if(currentRole!=='admin') return alert('Bu işlem sadece admin için aktif.');
+    await exportExpensesPDF();
   }catch(e){
     console.error(e);
     alert('PDF oluşturulamadı. Konsolu kontrol edin.');
@@ -881,6 +908,91 @@ async function exportResidentsPDF(){
   }
 }
 
+async function exportExpensesPDF(){
+  // Export currently filtered expenses table as PDF.
+  await ensureExpensesUI();
+
+  const rows = await listExpenses();
+  rows.sort((a,b)=>{
+    const da = a.date ? new Date(a.date).getTime() : 0;
+    const db = b.date ? new Date(b.date).getTime() : 0;
+    return db - da;
+  });
+
+  const q   = qs('#expSearch')?.value?.trim() || '';
+  const cat = qs('#expCategory')?.value || '';
+  const y   = qs('#expYear')?.value || '';
+  const m   = qs('#expMonth')?.value || '';
+  const filtered = rows.filter(r=> matchExpenseFilters(r,q,y,m,cat));
+
+  const today = new Date();
+  const fCat  = cat || 'Tümü';
+  const fYear = y || 'Tümü';
+  const fMonth= m ? MONTHS_TR[+m-1] : 'Tümü';
+  const title = 'Giderler Listesi';
+  const subtitle = `Filtre — Kategori: ${fCat} | Yıl: ${fYear} | Ay: ${fMonth}`;
+  const meta = `Tarih: ${today.toLocaleDateString('tr-TR')}  Saat: ${today.toLocaleTimeString('tr-TR',{hour:'2-digit',minute:'2-digit'})}    Kayıt: ${filtered.length}`;
+
+  const headers = ['Kategori','Not','Tutar (₺)','Tarih'];
+  let total = 0;
+  const body = [
+    headers,
+    ...filtered.map(r=>{
+      const amount = +r.amount || 0;
+      total += amount;
+      return [
+        String(r.category||''),
+        String(r.note||''),
+        fmtTRY.format(amount),
+        fmtDate(r.date)
+      ];
+    })
+  ];
+
+  const dd = {
+    pageSize: 'A4',
+    pageOrientation: 'landscape',
+    pageMargins: [24, 24, 24, 24],
+    content: [
+      { text: title, style: 'h1' },
+      { text: subtitle, style: 'sub' },
+      { text: meta, style: 'meta', margin: [0, 0, 0, 10] },
+      {
+        table: {
+          headerRows: 1,
+          widths: [120, '*', 90, 80],
+          body
+        },
+        layout: {
+          fillColor: (rowIndex)=> rowIndex===0 ? '#6e56b9' : (rowIndex%2===0 ? '#f7f7fb' : null),
+          hLineColor: ()=> '#dddddd',
+          vLineColor: ()=> '#eeeeee',
+          paddingLeft: ()=> 6,
+          paddingRight: ()=> 6,
+          paddingTop: ()=> 4,
+          paddingBottom: ()=> 4
+        }
+      },
+      { text: `Toplam: ${fmtTRY.format(total)}`, style: 'total', margin: [0, 10, 0, 0] }
+    ],
+    styles: {
+      h1: { fontSize: 16, bold: true, margin: [0,0,0,4] },
+      sub: { fontSize: 10, color: '#555', margin: [0,0,0,4] },
+      meta: { fontSize: 10, color: '#666' },
+      total: { fontSize: 11, bold: true }
+    },
+    defaultStyle: { fontSize: 9 }
+  };
+
+  dd.content[3].table.body[0] = dd.content[3].table.body[0].map(t=>({text:t, color:'#fff', bold:true}));
+
+  const fname = trToAscii(`Giderler-${today.toISOString().slice(0,10)}.pdf`);
+  if(window.pdfMake && window.pdfMake.createPdf){
+    window.pdfMake.createPdf(dd).download(fname);
+  }else{
+    alert('PDF altyapısı yüklenemedi (pdfMake).');
+  }
+}
 
 /* ==================== Dashboard summary ==================== */
 async function renderDashboard(){
@@ -1328,7 +1440,7 @@ function paymentsToolbarHTML(){
       <select id="payMonth" style="padding:8px 10px;border:1px solid var(--border);border-radius:10px;">${monthOpts}</select>
       <button type="button" id="payReset" class="btn outline">Sıfırla</button>
       <span style="flex:1"></span>
-      <button type="button" id="payExportCSV" class="btn outline">CSV</button>
+      <button type="button" id="payExportCSV" class="btn outline admin-only hidden">CSV</button>
     </div>
     <div class="table-container">
       <table class="tbl">
@@ -1711,6 +1823,10 @@ async function renderPaymentsTable(){
 try{ enforceExportVisibility(); }catch(e){}
 
 async function exportPaymentsCSV(){
+  if(currentRole!=='admin'){
+    alert('Bu indirme/çıktı alma işlemi sadece admin için aktif.');
+    return;
+  }
   const [rows, residents] = await Promise.all([listPayments(), getResidentsCached()]);
   const nameToFlat = new Map(residents.map(r=>[(r.name||'').trim().toLowerCase(), r.flatNo || '']));
   rows.forEach(r=>{
@@ -1767,7 +1883,7 @@ function expensesToolbarHTML(){
       <select id="expMonth" style="padding:8px 10px;border:1px solid var(--border);border-radius:10px;">${monthOpts}</select>
       <button type="button" id="expReset" class="btn outline">Sıfırla</button>
       <span style="flex:1"></span>
-      <button type="button" id="expExportCSV" class="btn outline">CSV</button>
+      <button type="button" id="expExportCSV" class="btn outline admin-only hidden">CSV</button>
     </div>
     <div class="table-container">
       <table class="tbl">
@@ -1881,6 +1997,10 @@ async function renderExpensesTable(){
 }
 try{ enforceExportVisibility(); }catch(e){}
 async function exportExpensesCSV(){
+  if(currentRole!=='admin'){
+    alert('Bu indirme/çıktı alma işlemi sadece admin için aktif.');
+    return;
+  }
   const rows = await listExpenses();
   const q   = qs('#expSearch')?.value?.trim() || '';
   const cat = qs('#expCategory')?.value || '';

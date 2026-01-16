@@ -91,7 +91,7 @@
         <option value="passive">Pasif Sakinler</option>
         <option value="all">Tüm Sakinler</option>
       </select>
-      <button class="btn outline admin-only" id="exportResidentsPDF">⬇️ Sakinler PDF</button>
+      <button class="btn outline admin-only hidden" id="exportResidentsPDF">⬇️ Sakinler PDF</button>
       <button class="btn primary admin-only hidden" id="btnResidentAdd">➕ Sakin Ekle</button>
     </div>
   </div>
@@ -119,8 +119,8 @@
 <div class="panel-head"><h2>💳 Ödemeler</h2>
 <div class="row-gap">
   <button class="btn primary admin-only hidden" id="addPayment">➕ Ödeme Ekle</button>
-  <button class="btn outline admin-only" id="exportPaymentsPDF">⬇️ Ödemeler PDF</button>
-  <button class="btn outline admin-only" id="exportPayments">⬇️ JSON Dışa Aktar</button>
+  <button class="btn outline admin-only hidden" id="exportPaymentsPDF">⬇️ Ödemeler PDF</button>
+  <button class="btn outline admin-only hidden" id="exportPayments">⬇️ JSON Dışa Aktar</button>
 </div>
 </div>
 <div class="list" id="paymentList"></div>
@@ -129,7 +129,11 @@
 <section class="hidden" id="expenses">
 <div class="panel">
 <div class="panel-head"><h2>💸 Giderler</h2>
-<div class="row-gap"><button class="btn primary admin-only hidden" id="addExpense">➕ Gider Ekle</button><button class="btn outline admin-only" id="exportExpenses">⬇️ JSON Dışa Aktar</button></div>
+<div class="row-gap">
+  <button class="btn primary admin-only hidden" id="addExpense">➕ Gider Ekle</button>
+  <button class="btn outline admin-only hidden" id="exportExpensesPDF">⬇️ Giderler PDF</button>
+  <button class="btn outline admin-only hidden" id="exportExpenses">⬇️ JSON Dışa Aktar</button>
+</div>
 </div>
 <div class="list" id="expenseList"></div>
 </div>
@@ -148,9 +152,9 @@
 <option value="10">Ekim</option><option value="11">Kasım</option><option value="12">Aralık</option>
 </select>
 <select id="repFlat"></select>
-<button class="btn outline admin-only" id="repExportCSV">CSV</button>
-<button class="btn outline admin-only" id="repFlatPDF">PDF (Daire Bazlı)</button>
-<button class="btn outline admin-only" id="repMonthlyPDF">Aylık İcmal PDF</button>
+<button class="btn outline admin-only hidden" id="repExportCSV">CSV</button>
+<button class="btn outline admin-only hidden" id="repFlatPDF">PDF (Daire Bazlı)</button>
+<button class="btn outline admin-only hidden" id="repMonthlyPDF">Aylık İcmal PDF</button>
 </div>
 </div>
 <div class="muted" style="margin-bottom:8px">Hücrelerde <span class="badge paid">Tam</span> / <span class="badge partial">Kısmi</span> / <span class="badge unpaid">Yok</span> gösterilir.</div>
@@ -165,7 +169,7 @@
     <div class="row-gap" style="flex-wrap:wrap">
       <select id="extraRepYear"></select>
       <select id="extraRepFee"></select>
-      <button class="btn outline admin-only" id="extraRepExportCSV">CSV</button>
+      <button class="btn outline admin-only hidden" id="extraRepExportCSV">CSV</button>
     </div>
   </div>
   <div class="muted" style="margin-bottom:8px">Seçtiğiniz ek ödeme kalemi için daire bazlı borç/ödeme/kalan durumunu gösterir.</div>
