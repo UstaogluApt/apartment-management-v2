@@ -37,6 +37,7 @@ const show = (el)=> el && el.classList.remove('hidden');
 const hide = (el)=> el && el.classList.add('hidden');
 const fmtTRY = new Intl.NumberFormat('tr-TR', { style:'currency', currency:'TRY' });
 const fmtDate = (v)=> { if(!v) return "-"; const d=v instanceof Date?v:new Date(v); return d.toLocaleDateString('tr-TR',{year:'numeric',month:'short',day:'numeric'}); };
+
 // Ortak para formatlayıcı (raporlar vb. yerlerde kullanılır)
 function format(n){
   return fmtTRY.format(+n || 0);
@@ -49,6 +50,11 @@ function escapeHtml(value){
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;")
     .replace(/'/g, "&#039;");
+}
+
+function tipAttr(str){
+  // Tooltip attribute-safe string (keeps line breaks)
+  return escapeHtml(str).replace(/\n/g, "&#10;");
 }
 
 function setInputValue(form, selector, value){
@@ -189,6 +195,24 @@ function trToAscii(str){
 
 /* ==================== Reports (Yıllık Aidat Takip Cetveli + PDF) ==================== */
 const MONTHS_TR = ['Ocak','Şubat','Mart','Nisan','Mayıs','Haziran','Temmuz','Ağustos','Eylül','Ekim','Kasım','Aralık'];
+
+function monthCellClass(due, paid){
+  const d = +due || 0;
+  const p = +paid || 0;
+  if(d<=0 && p<=0) return 'cell-none';
+  if(p >= d && d > 0) return 'cell-ok';
+  if(p > 0 && p < d) return 'cell-partial';
+  return 'cell-bad';
+}
+
+function monthStatusIcon(due, paid){
+  const d = +due || 0;
+  const p = +paid || 0;
+  if(d<=0 && p<=0) return '–';
+  if(p >= d && d > 0) return '✓';
+  if(p > 0 && p < d) return '●';
+  return '✕';
+}
 
 function yearsOptionsHTML(span=9){
   const y0 = new Date().getFullYear();
@@ -340,7 +364,13 @@ async function renderReportsTable(){
       const due = ((feesMap[f]||{})[mm])||0;
       const paid = (payIdx[f] && payIdx[f][`${year}-${mm}`]) || 0;
       rowDue += due; rowPaid += paid;
-      return `<td class="num">${format(due)}</td>`;
+      const cls = monthCellClass(due, paid);
+      const icon = monthStatusIcon(due, paid);
+      const remM = Math.max(0, (+due||0) - (+paid||0));
+      const tip = `Aidat: ${format(due)}
+Ödenen: ${format(paid)}
+Kalan: ${format(remM)}`;
+      return `<td class=\"num money month-cell ${cls}\" data-tip=\"${tipAttr(tip)}\"><span class=\"m-ic\">${icon}</span><span class=\"m-amt\">${format(due)}</span></td>`;
     }).join('');
 
     sumDueAll += rowDue; sumPaidAll += rowPaid;
@@ -680,6 +710,8 @@ qs('#exportExpenses')?.addEventListener('click',()=>exportCollection('expenses')
 async function renderDashboard(){
   const box=qs('#dashboardSummary'); if(!box) return; box.innerHTML="";
   const [res,pays,exps]=await Promise.all([listResidents(),listPayments(),listExpenses()]);
+  // ✅ Dashboard 'Toplam Sakin' sadece aktif sakinleri içerir
+  const activeRes = (res||[]).filter(isResidentActive);
   // ✅ Dashboard 'Toplam Sakin' sadece aktif sakinleri içerir
   const activeRes = (res||[]).filter(isResidentActive);
   const totalP=pays.reduce((s,p)=>s+(+p.amount||0),0);
