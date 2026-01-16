@@ -193,28 +193,56 @@ input,select,textarea{width:100%;padding:10px 12px;border:1px solid var(--border
 .grid2{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
 @media(max-width:720px){.grid2{grid-template-columns:1fr}}
 
-/* ===== DRAG DROP DUYURULAR ===== */
-.announce-item {
-  cursor: move;
-  transition: transform .15s, box-shadow .15s;
-}
+/* =========================
+   Duyurular: Drag & Drop
+   ========================= */
+.ann-card{ position: relative; }
 
-.announce-item.dragging {
-  opacity: .6;
-  transform: scale(.98);
-  box-shadow: 0 8px 20px rgba(0,0,0,.15);
-}
+/* Admin drag mode */
+.ann-card.ann-draggable{ cursor: grab; }
+.ann-card.ann-draggable:active{ cursor: grabbing; }
 
-.announce-item:hover {
-  box-shadow: 0 6px 14px rgba(0,0,0,.12);
-}
-
-/* küçük tutma ikonu */
-.announce-item::before {
-  content: "☰";
+/* Drag handle icon */
+.ann-card.ann-draggable::before{
+  content: "\2630"; /* ☰ */
   position: absolute;
-  left: 8px;
+  left: 10px;
   top: 10px;
-  opacity: .4;
+  opacity: .35;
+  font-weight: 800;
 }
 
+/* Make space for handle */
+.ann-card.ann-draggable .ann-title,
+.ann-card.ann-draggable .ann-body{ padding-left: 18px; }
+
+.ann-card.dragging{
+  opacity: .65;
+  transform: scale(.99);
+  box-shadow: 0 14px 28px rgba(0,0,0,.18);
+}
+
+/* ==================== Announcements (Premium Sorting UI) ==================== */
+.ann-controls{align-items:center;flex-wrap:wrap;justify-content:flex-end}
+.ann-sort{display:flex;align-items:center;gap:8px}
+.ann-sort-label{font-size:12px;color:var(--muted);font-weight:700}
+.ann-sort select{min-width:200px}
+
+.ann-title{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.ann-pin{display:inline-flex;align-items:center;justify-content:center}
+.ann-order{display:inline-flex;align-items:center;justify-content:center;
+  padding:4px 8px;border-radius:999px;font-size:12px;font-weight:800;
+  background:rgba(17,24,39,.06);border:1px solid var(--border);color:var(--text)}
+
+.ann-actions{display:flex;gap:8px;flex-wrap:wrap;align-items:center;justify-content:flex-end;margin-top:10px}
+.ann-move{display:flex;gap:6px;align-items:center}
+
+.btn.tiny{padding:6px 10px;border-radius:10px;font-weight:800}
+
+.ann-pin-toggle{display:flex;align-items:center;gap:10px;margin-top:22px;font-weight:800;color:var(--text)}
+.ann-pin-toggle input{width:auto}
+
+/* Make announcements feel more "card" and consistent */
+.announce-list{display:grid;grid-template-columns:1fr;gap:12px}
+.ann-card{transition:transform .12s ease, box-shadow .12s ease}
+.ann-card:hover{transform:translateY(-1px);box-shadow:0 14px 38px rgba(31,41,55,.14)}

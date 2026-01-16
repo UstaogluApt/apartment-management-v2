@@ -3,7 +3,7 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/fireba
 import { getAuth, onAuthStateChanged, signInWithEmailAndPassword, signOut, setPersistence, browserSessionPersistence } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
 import {
   getFirestore, collection, doc, getDoc, getDocs, setDoc, addDoc,
-  serverTimestamp, updateDoc, deleteDoc
+  serverTimestamp, updateDoc, deleteDoc, writeBatch
 } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
 
 // Session flag hygiene: clear manual sign-in flag on fresh navigations (not on reload)
@@ -367,7 +367,7 @@ async function renderExtraReportTable(){
 
   const year = ysel.value || String(new Date().getFullYear());
   const cfg = await getExtraPaymentForYear(year);
-  const defaultAmount = getExtraDueForFlat(cfg, "");
+  const amount = +((cfg&&cfg.amount)||0);
   const title = (cfg&&cfg.title)||'Yıllık Ek Ödeme';
 
   // Fee selector (tek kalem - yıllık)
@@ -392,7 +392,7 @@ async function renderExtraReportTable(){
   });
 
   tbody.innerHTML = flats.map(f=>{
-    const due = getExtraDueForFlat(cfg, f);
+    const due = amount;
     const paid = extraPaidByFlat[f]||0;
     const rem = due - paid;
     const st = rem<=0 ? `<span class="badge ok">Tam</span>` : (paid>0 ? `<span class="badge warn">Kısmi</span>` : `<span class="badge bad">Ödenmedi</span>`);
@@ -628,21 +628,8 @@ async function setExtraPaymentDoc(year, data){
   );
 }
 async function getExtraPaymentForYear(year){
-  // returns extra payment config for year or null
+  // returns {amount,title,description} or null
   try{ return await getExtraPaymentDoc(year); }catch(e){ console.warn('extraPayments read failed', e); return null; }
-}
-
-// Helper: per-flat due amount (supports legacy fields)
-function getExtraDueForFlat(cfg, flat){
-  const f = String(flat||'').trim();
-  const map = (cfg && (cfg.amountsByFlat || cfg.amounts || cfg.duesByFlat)) || {};
-  if (f && Object.prototype.hasOwnProperty.call(map, f)){
-    const v = +map[f];
-    return (isFinite(v) && v>=0) ? v : 0;
-  }
-  const def = cfg?.amountDefault ?? cfg?.amount ?? 0;
-  const dv = +def;
-  return (isFinite(dv) && dv>=0) ? dv : 0;
 }
 
 /* ===== Admin Info ===== */
@@ -682,6 +669,8 @@ async function renderDashboard(){
   const [res,pays,exps]=await Promise.all([listResidents(),listPayments(),listExpenses()]);
   // ✅ Dashboard 'Toplam Sakin' sadece aktif sakinleri içerir
   const activeRes = (res||[]).filter(isResidentActive);
+  // ✅ Dashboard 'Toplam Sakin' sadece aktif sakinleri içerir
+  const activeRes = (res||[]).filter(isResidentActive);
   const totalP=pays.reduce((s,p)=>s+(+p.amount||0),0);
   const totalE=exps.reduce((s,p)=>s+(+p.amount||0),0);
   const items=[
@@ -696,7 +685,21 @@ async function renderDashboard(){
 /* ==================== Announcements ==================== */
 async function renderAnnouncements(){
   const box=qs('#announcementList'); if(!box) return;
-  const rows=await listAnnouncements(); announcementsCache = rows;
+  const rows=await listAnnouncements();
+  // Deterministic ordering:
+  // 1) sortOrder (manual) asc
+  // 2) createdAt/date desc (newest first)
+  rows.sort((a,b)=>{
+    const ao = (a.sortOrder==null? 999999 : +a.sortOrder);
+    const bo = (b.sortOrder==null? 999999 : +b.sortOrder);
+    if(ao !== bo) return ao - bo;
+    const ad = a.createdAt?.toDate ? +a.createdAt.toDate() : (a.createdAt ? +new Date(a.createdAt) : (a.date ? +new Date(a.date) : 0));
+    const bd = b.createdAt?.toDate ? +b.createdAt.toDate() : (b.createdAt ? +new Date(b.createdAt) : (b.date ? +new Date(b.date) : 0));
+    return bd - ad;
+  });
+
+  announcementsCache = rows;
+  const isAdminUI = (currentRole==='admin');
   box.innerHTML = rows.map(r=>{
     const t=r.type||'info';
     const created=r.createdAt?.toDate?r.createdAt.toDate():(r.createdAt||r.date);
@@ -706,10 +709,13 @@ async function renderAnnouncements(){
            <button type="button" class="btn small edit" data-id="${r.id}">✏️ Düzenle</button>
            <button type="button" class="btn small danger delete" data-id="${r.id}">🗑️ Sil</button>
          </div>` : '';
-    return `<div class="ann-card ${t}" data-id="${r.id}">
+    return `<div class="ann-card ${t} ${isAdminUI?'ann-draggable':''}" data-id="${r.id}" ${isAdminUI?'draggable="true"':''}>
       <div class="ann-top"><div class="ann-title">${r.title||'-'}</div><div class="ann-date meta">${when}</div></div>
       <div class="ann-body">${r.content||'-'}</div>${actions}</div>`;
   }).join('') || '<div class="neutral"><div><strong>Henüz duyuru yok</strong></div></div>';
+
+  // Drag & drop order only for admin
+  if(isAdminUI) enableAnnouncementDragDrop();
 
   box.onclick = async (e)=>{
   const edit = e.target.closest('.edit');
@@ -734,6 +740,81 @@ async function renderAnnouncements(){
     return;
   }
 };
+}
+
+// --- Drag & Drop (Announcements) ---
+function enableAnnouncementDragDrop(){
+  const list = document.getElementById('announcementList');
+  if(!list) return;
+
+  let draggingEl = null;
+
+  // IMPORTANT: re-bind safely
+  list.querySelectorAll('.ann-card.ann-draggable').forEach(el=>{
+    // avoid duplicate listeners
+    if(el.dataset.dndBound==='1') return;
+    el.dataset.dndBound='1';
+
+    el.addEventListener('dragstart', (e)=>{
+      // allow buttons to work without dragging
+      if(e.target && (e.target.closest('.ann-actions') || e.target.closest('button'))){
+        e.preventDefault();
+        return false;
+      }
+      draggingEl = el;
+      el.classList.add('dragging');
+      try{
+        e.dataTransfer.effectAllowed = 'move';
+        // Firefox requires some data to be set
+        e.dataTransfer.setData('text/plain', el.dataset.id || '');
+      }catch{}
+    });
+
+    el.addEventListener('dragend', async ()=>{
+      el.classList.remove('dragging');
+      draggingEl = null;
+      try{ await persistAnnouncementOrder(); }catch(err){ console.error(err); alert('Duyuru sırası kaydedilemedi.'); }
+    });
+  });
+
+  // Container handles reordering during dragover
+  if(!list.dataset.dndContainerBound){
+    list.dataset.dndContainerBound='1';
+    list.addEventListener('dragover', (e)=>{
+      e.preventDefault();
+      if(!draggingEl) return;
+      const afterEl = getDragAfterElement(list, e.clientY);
+      if(afterEl == null) list.appendChild(draggingEl);
+      else list.insertBefore(draggingEl, afterEl);
+    });
+  }
+}
+
+function getDragAfterElement(container, y){
+  const els = [...container.querySelectorAll('.ann-card.ann-draggable:not(.dragging)')];
+  return els.reduce((closest, child)=>{
+    const box = child.getBoundingClientRect();
+    const offset = y - box.top - box.height/2;
+    if(offset < 0 && offset > closest.offset) return {offset, element: child};
+    return closest;
+  }, {offset: Number.NEGATIVE_INFINITY, element: null}).element;
+}
+
+async function persistAnnouncementOrder(){
+  if(currentRole!=='admin') return;
+  const list = document.getElementById('announcementList');
+  if(!list) return;
+
+  const cards = [...list.querySelectorAll('.ann-card.ann-draggable')];
+  // 10,20,30... more flexible for future inserts
+  const updates = cards.map((el, idx)=>({ id: el.dataset.id, sortOrder: (idx+1)*10 }));
+
+  const batch = writeBatch(db);
+  updates.forEach(u=>{
+    if(!u.id) return;
+    batch.update(doc(db,'announcements',u.id), { sortOrder: u.sortOrder, updatedAt: serverTimestamp(), updatedBy: currentUser?.uid||null });
+  });
+  await batch.commit();
 }
 
 /* --- Admin Info (view) --- */
@@ -1731,8 +1812,7 @@ function feesToolbarHTML(){
       <div class="row-gap" style="align-items:center;flex-wrap:wrap">
         <select id="extraYear" class="pill"></select>
         <input id="extraTitle" class="pill" placeholder="Açıklama (örn: Asansör yenileme)" style="min-width:260px">
-        <input id="extraAmount" type="number" min="0" step="0.01" class="pill" placeholder="Varsayılan (₺)" style="width:220px">
-        <button id="extraDuesEdit" class="btn outline admin-only" title="Daire bazlı tutarları düzenle">🏠 Daire Bazlı</button>
+        <input id="extraAmount" type="number" min="0" step="0.01" class="pill" placeholder="Daire başı yıllık (₺)" style="width:220px">
         <button id="extraSave" class="btn primary admin-only">Kaydet</button>
       </div>
     </div>
@@ -1773,9 +1853,7 @@ async function ensureFeesUI(){
         const info = qs('#extraInfo');
         if(info){
           if(docx && (docx.amount || docx.title || docx.description)){
-            const defAmt = getExtraDueForFlat(docx, '');
-            const ovCount = Object.keys((docx?.amountsByFlat||{})).length;
-            info.innerHTML = `Kayıtlı: <b>${y}</b> — ${docx.title?docx.title+' — ':''}<b>${fmtTRY.format(defAmt)}</b> (varsayılan / yıl) ${ovCount?`— <b>${ovCount}</b> dairede özel tutar`:''}`;
+            info.innerHTML = `Kayıtlı: <b>${y}</b> — ${docx.title?docx.title+' — ':''}<b>${fmtTRY.format(+docx.amount||0)}</b> (daire başı / yıl)`;
           }else{
             info.innerHTML = `Bu yıl için ek ödeme tanımı yok.`;
           }
@@ -1796,12 +1874,7 @@ async function ensureFeesUI(){
         try{ await renderReportsTable(); }catch(e){}
       });
 
-      qs('#extraDuesEdit')?.addEventListener('click', async ()=>{
-        if(currentRole!=='admin'){ alert('Yetki yok'); return; }
-        const y = extraYearSel.value;
-        await openExtraDuesEditorForYear(y);
-      });
-// initial
+      // initial
       loadExtraUI();
     }
 
@@ -1989,83 +2062,6 @@ async function exportFeesCSV(){
   a.click();
 }
 
-
-
-/* ==================== Extra Dues Modal (Per-Flat Yearly Extra Payment) ==================== */
-let extraDuesEditingYear = null;
-async function openExtraDuesEditorForYear(year){
-  extraDuesEditingYear = String(year||'').trim() || String(new Date().getFullYear());
-  const cfg = (await getExtraPaymentForYear(extraDuesEditingYear)) || {};
-  const defAmt = getExtraDueForFlat(cfg, '');
-  const title = (cfg?.title || 'Yıllık Ek Ödeme');
-
-  // Title + hint
-  const t = qs('#extraDuesTitle');
-  if(t) t.textContent = `Daire Bazlı Tutarlar — ${title} (${extraDuesEditingYear})`;
-  const hint = qs('#extraDuesHint');
-  if(hint) hint.textContent = `Varsayılan tutar: ${fmtTRY.format(defAmt)}. Boş bırakılan daireler varsayılanı kullanır.`;
-
-  const bulk = qs('#extraDuesBulk');
-  if(bulk) bulk.value = '';
-
-  const tbody = qs('#extraDuesTbody');
-  if(!tbody){ alert('Daire bazlı tutar tablosu bulunamadı.'); return; }
-
-  const [residents, feesMap] = await Promise.all([getResidentsCached(), getYearFeesMap(extraDuesEditingYear)]);
-  const flats = collectFlatsFromResidentsAndFees(residents, feesMap);
-
-  const map = (cfg?.amountsByFlat || {});
-  tbody.innerHTML = flats.map(f=>{
-    const name = getActiveResidentNameForFlat(f, residents) || '—';
-    const hasOverride = Object.prototype.hasOwnProperty.call(map, String(f));
-    const val = hasOverride ? (+(map[String(f)])||0) : '';
-    return `
-      <tr>
-        <td><b>${escapeHtml(f)}</b></td>
-        <td>${escapeHtml(name)}</td>
-        <td>
-          <input class="pill extra-due-inp" data-flat="${escapeHtml(f)}" type="number" min="0" step="0.01" placeholder="${defAmt?`Boş= ${defAmt}`:'Boş= varsayılan'}" style="width:200px" value="${val}">
-        </td>
-      </tr>`;
-  }).join('') || `<tr><td colspan="3" class="muted" style="text-align:center;padding:14px">Daire bulunamadı.</td></tr>`;
-
-  // Bind buttons once
-  const applyBtn = qs('#extraDuesApplyAll');
-  if(applyBtn && !applyBtn.dataset.bound){
-    applyBtn.dataset.bound='1';
-    applyBtn.addEventListener('click', ()=>{
-      const v = +(qs('#extraDuesBulk')?.value || 0);
-      if(!(v>=0)) { alert('Tutar geçersiz'); return; }
-      qsa('#extraDuesTbody .extra-due-inp').forEach(inp=>{ inp.value = String(v); });
-    });
-  }
-
-  const saveBtn = qs('#extraDuesSave');
-  if(saveBtn && !saveBtn.dataset.bound){
-    saveBtn.dataset.bound='1';
-    saveBtn.addEventListener('click', async ()=>{
-      if(currentRole!=='admin'){ alert('Yetki yok'); return; }
-      if(!extraDuesEditingYear) return;
-      const newMap = {};
-      qsa('#extraDuesTbody .extra-due-inp').forEach(inp=>{
-        const flat = String(inp.getAttribute('data-flat')||'').trim();
-        const raw = String(inp.value||'').trim();
-        if(!flat) return;
-        if(raw==='') return; // empty => use default
-        const val = +raw;
-        newMap[flat] = (isFinite(val) && val>=0) ? val : 0;
-      });
-      await setExtraPaymentDoc(extraDuesEditingYear, { amountsByFlat: newMap });
-      closeModals();
-      // refresh fees + extra reports
-      try{ qs('#extraYear')?.dispatchEvent(new Event('change')); }catch(e){}
-      try{ await renderExtraReportTable(); }catch(e){}
-      alert('Daire bazlı tutarlar kaydedildi.');
-    });
-  }
-
-  openModal(modalSel('#modalExtraDues','#extraDuesModal'));
-}
 /* ==================== Modals ==================== */
 const backdrop = qs('#modalBackdrop');
 function openModal(sel){ const m=qs(sel); if(!m){ console.warn('Modal not found:', sel); return; } show(m); show(qs('#modalBackdrop')); }
@@ -2110,8 +2106,11 @@ qs('#setFee')?.addEventListener('click',async (e)=>{
 qs('#formAnnouncement')?.addEventListener('submit', async (e)=>{
   e.preventDefault(); if(currentRole!=='admin') return;
   const fd=new FormData(e.target); const data=Object.fromEntries(fd.entries());
-  if(editingAnnouncementId){ await updateAnnouncement(editingAnnouncementId,{title:data.title,type:data.type||'info',content:data.content}); }
-  else { await addAnnouncement({title:data.title,type:data.type||'info',content:data.content}); }
+  const sortOrder = Number.isFinite(+data.order) ? +data.order : 0;
+  const pinned = !!data.pinned;
+  const payload = { title: data.title, type: data.type||'info', content: data.content, sortOrder, pinned };
+  if(editingAnnouncementId){ await updateAnnouncement(editingAnnouncementId, payload); }
+  else { await addAnnouncement(payload); }
   editingAnnouncementId=null; e.target.reset(); closeModals(); await renderAnnouncements();
 });
 
@@ -2268,92 +2267,3 @@ onAuthStateChanged(auth, async (user)=>{
 
 /* ==================== Minor ==================== */
 try{ (function(){const __el=document.getElementById('yearCopy'); if(__el) __el.textContent=new Date().getFullYear();})() }catch{}
-
-/* ===============================
-   DUYURULAR DRAG & DROP SIRALAMA
-   =============================== */
-
-function enableAnnouncementDrag(){
-  const list = document.getElementById('announcementList');
-  if(!list) return;
-
-  let dragged = null;
-
-  list.querySelectorAll('.announce-item').forEach(item=>{
-    item.setAttribute('draggable','true');
-
-    item.addEventListener('dragstart', e=>{
-      dragged = item;
-      item.classList.add('dragging');
-      e.dataTransfer.effectAllowed = 'move';
-    });
-
-    item.addEventListener('dragend', ()=>{
-      item.classList.remove('dragging');
-    });
-
-    item.addEventListener('dragover', e=>{
-      e.preventDefault();
-
-      const after = getDragAfterElement(list, e.clientY);
-
-      if(after == null)
-        list.appendChild(dragged);
-      else
-        list.insertBefore(dragged, after);
-    });
-  });
-}
-
-function getDragAfterElement(container, y){
-  const els = [...container.querySelectorAll('.announce-item:not(.dragging)')];
-
-  return els.reduce((closest, child)=>{
-    const box = child.getBoundingClientRect();
-    const offset = y - box.top - box.height / 2;
-
-    if(offset < 0 && offset > closest.offset){
-      return { offset, element: child };
-    } else {
-      return closest;
-    }
-  }, { offset: Number.NEGATIVE_INFINITY }).element;
-}
-
-// Yeni sırayı Firestore’a yaz
-async function saveAnnouncementOrder(){
-  const list = document.getElementById('announcementList');
-
-  const items = [...list.querySelectorAll('.announce-item')]
-    .map((el, index)=>({
-      id: el.dataset.id,
-      order: index
-    }));
-
-  const batch = writeBatch(db);
-
-  items.forEach(it=>{
-    const ref = doc(db, 'announcements', it.id);
-    batch.update(ref, { sortOrder: it.order });
-  });
-
-  await batch.commit();
-}
-
-// Liste her yenilendiğinde drag aktif olsun
-const annObserver = new MutationObserver(()=>{
-  enableAnnouncementDrag();
-
-  const list = document.getElementById('announcementList');
-  if(!list) return;
-
-  list.querySelectorAll('.announce-item').forEach(el=>{
-    el.addEventListener('drop', saveAnnouncementOrder);
-  });
-});
-
-document.addEventListener('DOMContentLoaded', ()=>{
-  const target = document.getElementById('announcementList');
-  if(target)
-    annObserver.observe(target, { childList:true });
-});
