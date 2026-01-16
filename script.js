@@ -663,6 +663,17 @@ async function exportCollection(name){
 qs('#exportPayments')?.addEventListener('click',()=>exportCollection('payments'));
 qs('#exportExpenses')?.addEventListener('click',()=>exportCollection('expenses'));
 
+// Payments PDF export (filtered view)
+qs('#exportPaymentsPDF')?.addEventListener('click', async ()=>{
+  try{
+    if(currentRole!=='admin') return alert('Bu işlem sadece admin için aktif.');
+    await exportPaymentsPDF();
+  }catch(e){
+    console.error(e);
+    alert('PDF oluşturulamadı. Konsolu kontrol edin.');
+  }
+});
+
 // Residents PDF export
 qs('#exportResidentsPDF')?.addEventListener('click', async ()=>{
   try{
@@ -673,6 +684,124 @@ qs('#exportResidentsPDF')?.addEventListener('click', async ()=>{
     alert('PDF oluşturulamadı. Konsolu kontrol edin.');
   }
 });
+
+async function exportPaymentsPDF(){
+  // Export currently filtered payments table as PDF.
+  await ensurePaymentsUI();
+
+  const [rows, residents] = await Promise.all([listPayments(), getResidentsCached()]);
+  const idToFlat   = new Map(residents.map(r=>[r.id, getResidentFlatNo(r)]));
+  const nameToFlat = new Map(residents.map(r=>[(r.name||'').trim().toLowerCase(), getResidentFlatNo(r)]));
+
+  // Derive flatNo for older records
+  rows.forEach(r=>{
+    if(!r.flatNo){
+      if(r.residentId){
+        const f = idToFlat.get(r.residentId);
+        if(f) r._derivedFlatNo = f;
+      }
+      if(!r._derivedFlatNo && r.residentName){
+        const f2 = nameToFlat.get((r.residentName||'').trim().toLowerCase());
+        if(f2) r._derivedFlatNo = f2;
+      }
+    }
+  });
+
+  // Apply same sort + filters as UI
+  rows.sort((a,b)=>{
+    const da = a.date ? new Date(a.date).getTime() : 0;
+    const db = b.date ? new Date(b.date).getTime() : 0;
+    return db - da;
+  });
+
+  const q  = qs('#paySearch')?.value?.trim() || '';
+  const y  = qs('#payYear')?.value || '';
+  const m  = qs('#payMonth')?.value || '';
+  const t  = qs('#payType')?.value || '';
+  const rid= qs('#payResident')?.value || '';
+
+  const normalized = rows.map(r=>({ ...r, type:(r.type||r.paymentType||'Due') }));
+  const filtered = normalized.filter(r=> matchPaymentFilters(
+    { ...r, flatNo: r.flatNo || r._derivedFlatNo }, q, y, m, t, rid
+  ));
+
+  const today = new Date();
+  const fType = t ? typeToTR(t) : 'Tümü';
+  const fYear = y || 'Tümü';
+  const fMonth = m ? MONTHS_TR[+m-1] : 'Tümü';
+  const fResident = rid ? (residents.find(r=>r.id===rid)?.name || rid) : 'Tümü';
+  const title = 'Ödemeler Listesi';
+  const subtitle = `Filtre — Tür: ${fType} | Yıl: ${fYear} | Ay: ${fMonth} | Sakin: ${fResident}`;
+  const meta = `Tarih: ${today.toLocaleDateString('tr-TR')}  Saat: ${today.toLocaleTimeString('tr-TR',{hour:'2-digit',minute:'2-digit'})}    Kayıt: ${filtered.length}`;
+
+  const headers = ['Ödeyen','Daire','Tür','Ay','Açıklama','Tutar (₺)','Tarih'];
+  let total = 0;
+  const tableBody = [
+    headers,
+    ...filtered.map(r=>{
+      const flat = r.flatNo || r._derivedFlatNo || '';
+      const typTR = typeToTR(r.type);
+      const monthText = r.type === 'Extra' ? '—' : (paymentPeriod(r) || '');
+      const descText  = r.description || '—';
+      const amount = +r.amount || 0;
+      total += amount;
+      return [
+        String(r.payerName||r.residentName||''),
+        String(flat||''),
+        String(typTR||''),
+        String(monthText||''),
+        String(descText||''),
+        fmtTRY.format(amount),
+        fmtDate(r.date)
+      ];
+    })
+  ];
+
+  const dd = {
+    pageSize: 'A4',
+    pageOrientation: 'landscape',
+    pageMargins: [24, 24, 24, 24],
+    content: [
+      { text: title, style: 'h1' },
+      { text: subtitle, style: 'sub' },
+      { text: meta, style: 'meta', margin: [0, 0, 0, 10] },
+      {
+        table: {
+          headerRows: 1,
+          widths: ['*', 50, 70, 65, '*', 80, 75],
+          body: tableBody
+        },
+        layout: {
+          fillColor: (rowIndex)=> rowIndex===0 ? '#6e56b9' : (rowIndex%2===0 ? '#f7f7fb' : null),
+          hLineColor: ()=> '#dddddd',
+          vLineColor: ()=> '#eeeeee',
+          paddingLeft: ()=> 6,
+          paddingRight: ()=> 6,
+          paddingTop: ()=> 4,
+          paddingBottom: ()=> 4
+        }
+      },
+      { text: `Toplam: ${fmtTRY.format(total)}`, style: 'total', margin: [0, 10, 0, 0] }
+    ],
+    styles: {
+      h1: { fontSize: 16, bold: true, margin: [0,0,0,4] },
+      sub: { fontSize: 10, color: '#555', margin: [0,0,0,4] },
+      meta: { fontSize: 10, color: '#666' },
+      total: { fontSize: 11, bold: true }
+    },
+    defaultStyle: { fontSize: 9 }
+  };
+
+  // Header row text color white
+  dd.content[3].table.body[0] = dd.content[3].table.body[0].map(t=>({text:t, color:'#fff', bold:true}));
+
+  const fname = trToAscii(`Odemeler-${today.toISOString().slice(0,10)}.pdf`);
+  if(window.pdfMake && window.pdfMake.createPdf){
+    window.pdfMake.createPdf(dd).download(fname);
+  }else{
+    alert('PDF altyapısı yüklenemedi (pdfMake).');
+  }
+}
 
 async function exportResidentsPDF(){
   const filterSel = qs('#resFilter');
@@ -751,6 +880,7 @@ async function exportResidentsPDF(){
     alert('PDF altyapısı yüklenemedi (pdfMake).');
   }
 }
+
 
 /* ==================== Dashboard summary ==================== */
 async function renderDashboard(){
