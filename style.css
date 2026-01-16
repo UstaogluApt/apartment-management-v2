@@ -193,56 +193,86 @@ input,select,textarea{width:100%;padding:10px 12px;border:1px solid var(--border
 .grid2{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
 @media(max-width:720px){.grid2{grid-template-columns:1fr}}
 
-/* =========================
-   Duyurular: Drag & Drop
-   ========================= */
-.ann-card{ position: relative; }
+/* ===== DRAG DROP DUYURULAR ===== */
+.announce-item {
+  cursor: move;
+  transition: transform .15s, box-shadow .15s;
+}
 
-/* Admin drag mode */
-.ann-card.ann-draggable{ cursor: grab; }
-.ann-card.ann-draggable:active{ cursor: grabbing; }
+.announce-item.dragging {
+  opacity: .6;
+  transform: scale(.98);
+  box-shadow: 0 8px 20px rgba(0,0,0,.15);
+}
 
-/* Drag handle icon */
-.ann-card.ann-draggable::before{
-  content: "\2630"; /* ☰ */
+.announce-item:hover {
+  box-shadow: 0 6px 14px rgba(0,0,0,.12);
+}
+
+/* küçük tutma ikonu */
+.announce-item::before {
+  content: "☰";
   position: absolute;
-  left: 10px;
+  left: 8px;
   top: 10px;
-  opacity: .35;
-  font-weight: 800;
+  opacity: .4;
 }
 
-/* Make space for handle */
-.ann-card.ann-draggable .ann-title,
-.ann-card.ann-draggable .ann-body{ padding-left: 18px; }
 
-.ann-card.dragging{
-  opacity: .65;
-  transform: scale(.99);
-  box-shadow: 0 14px 28px rgba(0,0,0,.18);
+
+/* ===== Monthly cell visual (Reports) ===== */
+.data-table td.mtd{ padding: 6px 6px; text-align:center; }
+.mcell{
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 42px;
+  border-radius: 12px;
+  border: 1px solid rgba(0,0,0,.08);
+  padding: 6px 8px;
+  line-height: 1.1;
 }
+.mcell .micon{
+  width: 22px;
+  height: 22px;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 900;
+  font-size: 12px;
+  border: 1px solid rgba(0,0,0,.10);
+  background: rgba(255,255,255,.55);
+}
+.mcell .mvals{ display:flex; flex-direction:column; align-items:center; }
+.mcell .mdue{ font-weight: 800; font-variant-numeric: tabular-nums; }
+.mcell .mpaid{ font-size: 11px; opacity: .9; font-variant-numeric: tabular-nums; }
 
-/* ==================== Announcements (Premium Sorting UI) ==================== */
-.ann-controls{align-items:center;flex-wrap:wrap;justify-content:flex-end}
-.ann-sort{display:flex;align-items:center;gap:8px}
-.ann-sort-label{font-size:12px;color:var(--muted);font-weight:700}
-.ann-sort select{min-width:200px}
+.mcell.ok{ background: rgba(46, 204, 113, .18); color:#0e6b3a; }
+.mcell.ok .micon{ color:#0e6b3a; }
 
-.ann-title{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
-.ann-pin{display:inline-flex;align-items:center;justify-content:center}
-.ann-order{display:inline-flex;align-items:center;justify-content:center;
-  padding:4px 8px;border-radius:999px;font-size:12px;font-weight:800;
-  background:rgba(17,24,39,.06);border:1px solid var(--border);color:var(--text)}
+.mcell.partial{ background: rgba(241, 196, 15, .20); color:#8a6d07; }
+.mcell.partial .micon{ color:#8a6d07; }
 
-.ann-actions{display:flex;gap:8px;flex-wrap:wrap;align-items:center;justify-content:flex-end;margin-top:10px}
-.ann-move{display:flex;gap:6px;align-items:center}
+.mcell.bad{ background: rgba(231, 76, 60, .16); color:#9b1c12; }
+.mcell.bad .micon{ color:#9b1c12; }
 
-.btn.tiny{padding:6px 10px;border-radius:10px;font-weight:800}
+.mcell.none{ background: rgba(0,0,0,.05); color:#666; }
+.mcell.none .micon{ color:#666; }
 
-.ann-pin-toggle{display:flex;align-items:center;gap:10px;margin-top:22px;font-weight:800;color:var(--text)}
-.ann-pin-toggle input{width:auto}
+/* ===== Premium badges with icons ===== */
+.badge{ position: relative; }
+.badge.ok::before{ content:'✓'; font-weight:900; margin-right:6px; }
+.badge.warn::before{ content:'●'; font-weight:900; margin-right:6px; }
+.badge.bad::before{ content:'✕'; font-weight:900; margin-right:6px; }
 
-/* Make announcements feel more "card" and consistent */
-.announce-list{display:grid;grid-template-columns:1fr;gap:12px}
-.ann-card{transition:transform .12s ease, box-shadow .12s ease}
-.ann-card:hover{transform:translateY(-1px);box-shadow:0 14px 38px rgba(31,41,55,.14)}
+/* Money columns centered (reports) */
+.data-table td.num, .data-table th.num{ text-align:center; font-variant-numeric: tabular-nums; }
+
+
+/* ===== Row total visualization (Reports) ===== */
+.sum-ok{ background: rgba(46, 204, 113, .14) !important; color:#0e6b3a; }
+.sum-partial{ background: rgba(241, 196, 15, .16) !important; color:#8a6d07; }
+.sum-bad{ background: rgba(231, 76, 60, .14) !important; color:#9b1c12; }

@@ -198,6 +198,29 @@ function trToAscii(str){
 }
 
 /* ==================== Reports (Yıllık Aidat Takip Cetveli + PDF) ==================== */
+
+function monthStatus(due, paid){
+  due = +due || 0;
+  paid = +paid || 0;
+  if(due<=0 && paid<=0) return {cls:'none', icon:'–', label:'Yok'};
+  if(due>0 && paid>=due) return {cls:'ok', icon:'✓', label:'Ödendi'};
+  if(paid>0 && paid<due) return {cls:'partial', icon:'●', label:'Kısmi'};
+  return {cls:'bad', icon:'✕', label:'Ödenmedi'};
+}
+
+function monthCellHTML(due, paid){
+  const st = monthStatus(due, paid);
+  const rem = Math.max(0, (+due||0) - (+paid||0));
+  const tip = `Aidat: ${format(due)} | Ödenen: ${format(paid)} | Kalan: ${format(rem)}`;
+  return `<div class="mcell ${st.cls}" title="${tip}">
+    <span class="micon">${st.icon}</span>
+    <div class="mvals">
+      <div class="mdue">${format(due)}</div>
+      <div class="mpaid">${format(paid)}</div>
+    </div>
+  </div>`;
+}
+
 const MONTHS_TR = ['Ocak','Şubat','Mart','Nisan','Mayıs','Haziran','Temmuz','Ağustos','Eylül','Ekim','Kasım','Aralık'];
 
 function yearsOptionsHTML(span=9){
@@ -350,19 +373,20 @@ async function renderReportsTable(){
       const due = ((feesMap[f]||{})[mm])||0;
       const paid = (payIdx[f] && payIdx[f][`${year}-${mm}`]) || 0;
       rowDue += due; rowPaid += paid;
-      return `<td class="num">${format(due)}</td>`;
+      return `<td class="mtd">${monthCellHTML(due, paid)}</td>`;
     }).join('');
 
     sumDueAll += rowDue; sumPaidAll += rowPaid;
     const remain = rowDue - rowPaid;
+    const rcls = remain<=0 ? 'sum-ok' : (rowPaid>0 ? 'sum-partial' : 'sum-bad');
     const st = remain<=0 ? `<span class="badge ok">Tam</span>` : `<span class="badge warn">Eksik</span>`;
     return `
       <tr>
         <td><b>${escapeHtml(f)}</b></td>
         ${tds}
-        <td class="num"><b>${format(rowDue)}</b></td>
-        <td class="num"><b>${format(rowPaid)}</b></td>
-        <td class="num"><b>${format(remain)}</b> ${st}</td>
+        <td class="num ${rcls}"><b>${format(rowDue)}</b></td>
+        <td class="num ${rcls}"><b>${format(rowPaid)}</b></td>
+        <td class="num ${rcls}"><b>${format(remain)}</b> ${st}</td>
       </tr>`;
   }).join('');
 
@@ -421,9 +445,9 @@ async function renderExtraReportTable(){
     const st = rem<=0 ? `<span class="badge ok">Tam</span>` : (paid>0 ? `<span class="badge warn">Kısmi</span>` : `<span class="badge bad">Ödenmedi</span>`);
     return `<tr>
       <td><b>${escapeHtml(f)}</b></td>
-      <td class="num">${format(due)}</td>
-      <td class="num">${format(paid)}</td>
-      <td class="num"><b>${format(rem)}</b></td>
+      <td class="num money ${monthStatus(due, paid).cls}">${format(due)}</td>
+      <td class="num money ${monthStatus(due, paid).cls}">${format(paid)}</td>
+      <td class="num money ${monthStatus(due, paid).cls}"><b>${format(rem)}</b></td>
       <td>${st}</td>
     </tr>`;
   }).join('') || `<tr><td colspan="5" class="muted">Kayıt bulunamadı.</td></tr>`;
