@@ -63,7 +63,21 @@
 </div>
 </div>
 <div class="panel mt">
-<div class="panel-head"><h3>📢 Duyurular</h3><button class="btn primary admin-only hidden" id="addAnnouncement">➕ Duyuru Ekle</button></div>
+<div class="panel-head">
+  <h3>📢 Duyurular</h3>
+  <div class="row-gap ann-controls">
+    <label class="ann-sort">
+      <span class="ann-sort-label">Sırala:</span>
+      <select id="annSort" class="select">
+        <option value="manual">Manuel (Sıra)</option>
+        <option value="newest">En Yeni</option>
+        <option value="oldest">En Eski</option>
+        <option value="severity">Öncelik (Acil→Bilgi)</option>
+      </select>
+    </label>
+    <button class="btn primary admin-only hidden" id="addAnnouncement">➕ Duyuru Ekle</button>
+  </div>
+</div>
 <div class="announce-list" id="announcementList"></div>
 </div>
 </section>
@@ -77,6 +91,7 @@
         <option value="passive">Pasif Sakinler</option>
         <option value="all">Tüm Sakinler</option>
       </select>
+      <button class="btn outline admin-only" id="exportResidentsPDF">⬇️ Sakinler PDF</button>
       <button class="btn primary admin-only hidden" id="btnResidentAdd">➕ Sakin Ekle</button>
     </div>
   </div>
@@ -210,6 +225,13 @@
 <form class="form" id="formAnnouncement">
 <label>Başlık<input name="title" required="" type="text"/></label>
 <label>Tür<select name="type"><option value="info">Bilgi</option><option value="success">Başarı</option><option value="warning">Uyarı</option><option value="danger">Acil</option></select></label>
+<div class="row-gap">
+  <label style="flex:1">Sıra (küçük sayı üste)<input name="order" type="number" step="1" value="0"/></label>
+  <label class="ann-pin-toggle" style="flex:1">
+    <input type="checkbox" name="pinned" value="1"/>
+    <span>📌 Sabitle (Her zaman üstte)</span>
+  </label>
+</div>
 <label>Mesaj<textarea name="content" required="" rows="4"></textarea></label>
 <div class="modal-actions"><button class="btn" data-close="" type="button">İptal</button><button class="btn primary">Kaydet</button></div>
 </form>

@@ -663,13 +663,102 @@ async function exportCollection(name){
 qs('#exportPayments')?.addEventListener('click',()=>exportCollection('payments'));
 qs('#exportExpenses')?.addEventListener('click',()=>exportCollection('expenses'));
 
+// Residents PDF export
+qs('#exportResidentsPDF')?.addEventListener('click', async ()=>{
+  try{
+    if(currentRole!=='admin') return alert('Bu işlem sadece admin için aktif.');
+    await exportResidentsPDF();
+  }catch(e){
+    console.error(e);
+    alert('PDF oluşturulamadı. Konsolu kontrol edin.');
+  }
+});
+
+async function exportResidentsPDF(){
+  const filterSel = qs('#resFilter');
+  const filterVal = (filterSel?.value || 'active');
+  const filterLabel = (filterVal==='active') ? 'Aktif' : (filterVal==='passive' ? 'Pasif' : 'Tümü');
+
+  let rows = await listResidents();
+  rows.sort((a,b)=> (''+(a.flatNo||'')).localeCompare((''+(b.flatNo||'')), 'tr', {numeric:true}));
+
+  rows = rows.filter(r=>{
+    if(filterVal==='all') return true;
+    const active = isResidentActive(r);
+    if(filterVal==='active') return active;
+    if(filterVal==='passive') return !active;
+    return true;
+  });
+
+  const today = new Date();
+  const title = `Sakin Listesi (${filterLabel})`;
+  const subtitle = `Tarih: ${today.toLocaleDateString('tr-TR')}  Saat: ${today.toLocaleTimeString('tr-TR',{hour:'2-digit',minute:'2-digit'})}`;
+
+  const tableBody = [
+    ['Daire', 'Ad Soyad', 'Telefon', 'E-posta', 'Durum', 'Plaka', 'Aktiflik'],
+    ...rows.map(r=>[
+      String(r.flatNo||''),
+      String(r.name||''),
+      String(r.phone||''),
+      String(r.email||''),
+      String(statusToTR(r.status)||''),
+      String(r.licensePlate||''),
+      isResidentActive(r) ? 'Aktif' : 'Pasif'
+    ])
+  ];
+
+  const dd = {
+    pageSize: 'A4',
+    pageOrientation: 'landscape',
+    pageMargins: [24, 24, 24, 24],
+    content: [
+      { text: title, style: 'h1' },
+      { text: subtitle, style: 'sub' },
+      { text: `Toplam Kayıt: ${rows.length}`, style: 'meta', margin: [0, 0, 0, 10] },
+      {
+        table: {
+          headerRows: 1,
+          widths: [40, '*', 90, 150, 70, 80, 55],
+          body: tableBody
+        },
+        layout: {
+          fillColor: (rowIndex)=> rowIndex===0 ? '#6e56b9' : (rowIndex%2===0 ? '#f7f7fb' : null),
+          hLineColor: ()=> '#dddddd',
+          vLineColor: ()=> '#eeeeee',
+          paddingLeft: ()=> 6,
+          paddingRight: ()=> 6,
+          paddingTop: ()=> 4,
+          paddingBottom: ()=> 4
+        }
+      }
+    ],
+    styles: {
+      h1: { fontSize: 16, bold: true, margin: [0,0,0,4] },
+      sub: { fontSize: 10, color: '#555', margin: [0,0,0,4] },
+      meta: { fontSize: 10, color: '#666' }
+    },
+    defaultStyle: { fontSize: 9 }
+  };
+
+  // Header text color white for first row
+  // pdfmake does not auto-style header cells via layout, so style the first row manually:
+  dd.content[3].table.body[0] = dd.content[3].table.body[0].map(t=>({text:t, color:'#fff', bold:true}));
+
+  const fname = trToAscii(`Sakinler-${filterLabel}-${today.toISOString().slice(0,10)}.pdf`);
+  if(window.pdfMake && window.pdfMake.createPdf){
+    window.pdfMake.createPdf(dd).download(fname);
+  }else{
+    alert('PDF altyapısı yüklenemedi (pdfMake).');
+  }
+}
+
 /* ==================== Dashboard summary ==================== */
 async function renderDashboard(){
   const box=qs('#dashboardSummary'); if(!box) return; box.innerHTML="";
   const [res,pays,exps]=await Promise.all([listResidents(),listPayments(),listExpenses()]);
-
   // ✅ Dashboard 'Toplam Sakin' sadece aktif sakinleri içerir
   const activeRes = (res||[]).filter(isResidentActive);
+  // ✅ Dashboard 'Toplam Sakin' sadece aktif sakinleri içerir
   const totalP=pays.reduce((s,p)=>s+(+p.amount||0),0);
   const totalE=exps.reduce((s,p)=>s+(+p.amount||0),0);
   const items=[
