@@ -192,3 +192,29 @@ input,select,textarea{width:100%;padding:10px 12px;border:1px solid var(--border
 
 .grid2{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
 @media(max-width:720px){.grid2{grid-template-columns:1fr}}
+
+/* ===== DRAG DROP DUYURULAR ===== */
+.announce-item {
+  cursor: move;
+  transition: transform .15s, box-shadow .15s;
+}
+
+.announce-item.dragging {
+  opacity: .6;
+  transform: scale(.98);
+  box-shadow: 0 8px 20px rgba(0,0,0,.15);
+}
+
+.announce-item:hover {
+  box-shadow: 0 6px 14px rgba(0,0,0,.12);
+}
+
+/* küçük tutma ikonu */
+.announce-item::before {
+  content: "☰";
+  position: absolute;
+  left: 8px;
+  top: 10px;
+  opacity: .4;
+}
+
