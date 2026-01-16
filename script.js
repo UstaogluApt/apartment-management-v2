@@ -41,6 +41,16 @@ const fmtDate = (v)=> { if(!v) return "-"; const d=v instanceof Date?v:new Date(
 function format(n){
   return fmtTRY.format(+n || 0);
 }
+
+function escapeHtml(value){
+  return String(value ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
+}
+
 function setInputValue(form, selector, value){
   if(!form) return;
   const el = form.querySelector(selector);
