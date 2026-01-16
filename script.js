@@ -37,7 +37,10 @@ const show = (el)=> el && el.classList.remove('hidden');
 const hide = (el)=> el && el.classList.add('hidden');
 const fmtTRY = new Intl.NumberFormat('tr-TR', { style:'currency', currency:'TRY' });
 const fmtDate = (v)=> { if(!v) return "-"; const d=v instanceof Date?v:new Date(v); return d.toLocaleDateString('tr-TR',{year:'numeric',month:'short',day:'numeric'}); };
-
+// Ortak para formatlayıcı (raporlar vb. yerlerde kullanılır)
+function format(n){
+  return fmtTRY.format(+n || 0);
+}
 function setInputValue(form, selector, value){
   if(!form) return;
   const el = form.querySelector(selector);
