@@ -212,14 +212,18 @@ function monthCellHTML(due, paid){
   const st = monthStatus(due, paid);
   const rem = Math.max(0, (+due||0) - (+paid||0));
   const tip = `Aidat: ${format(due)} | Ödenen: ${format(paid)} | Kalan: ${format(rem)}`;
+
   return `<div class="mcell ${st.cls}" title="${tip}">
-    <span class="micon">${st.icon}</span>
-    <div class="mvals">
+    <div class="mmask"></div>
+    <div class="mcontent">
       <div class="mdue">${format(due)}</div>
-      <div class="mpaid">${format(paid)}</div>
+      <div class="mpaid">Ödenen: ${format(paid)}</div>
+      <div class="mrem">Kalan: ${format(rem)}</div>
     </div>
   </div>`;
 }
+
+
 
 const MONTHS_TR = ['Ocak','Şubat','Mart','Nisan','Mayıs','Haziran','Temmuz','Ağustos','Eylül','Ekim','Kasım','Aralık'];
 
@@ -441,45 +445,20 @@ async function renderExtraReportTable(){
     extraPaidByFlat[flat] = (extraPaidByFlat[flat]||0) + (+p.amount||0);
   });
 
-  // Header (Aidat tablosuna benzer, tek "kalem" hücresi ile)
-  if(thead){
-    thead.innerHTML = `
-      <tr>
-        <th>Daire</th>
-        <th>${escapeHtml(title)} (${year})</th>
-        <th>Ek Borç</th>
-        <th>Ek Ödeme</th>
-        <th>Kalan</th>
-      </tr>`;
-  }
-
-  let sumDueAll = 0, sumPaidAll = 0;
+  // Body
   tbody.innerHTML = flats.map(f=>{
-    const due = (items && items[f] != null) ? (+items[f]||0) : amount;
+    const due = (cfg && cfg.items && (cfg.items[f] != null)) ? (+cfg.items[f]||0) : amount;
     const paid = extraPaidByFlat[f]||0;
-    const rem = due - paid;
-    sumDueAll += due; sumPaidAll += paid;
-    const rcls = rem<=0 ? 'sum-ok' : (paid>0 ? 'sum-partial' : 'sum-bad');
+    const rem  = (+due||0) - (+paid||0);
+
     return `<tr data-flat="${escapeHtml(f)}" data-due="${due}" data-paid="${paid}" data-rem="${rem}">
       <td><b>${escapeHtml(f)}</b></td>
+      <td class="num money">${format(due)}</td>
+      <td class="num money">${format(paid)}</td>
+      <td class="num money"><b>${format(rem)}</b></td>
       <td class="mtd">${monthCellHTML(due, paid)}</td>
-      <td class="num ${rcls}"><b>${format(due)}</b></td>
-      <td class="num ${rcls}"><b>${format(paid)}</b></td>
-      <td class="num ${rcls}"><b>${format(rem)}</b></td>
     </tr>`;
   }).join('') || `<tr><td colspan="5" class="muted">Kayıt bulunamadı.</td></tr>`;
-
-  if(tfoot){
-    const diffAll = sumDueAll - sumPaidAll;
-    tfoot.innerHTML = `
-      <tr>
-        <td><b>TOPLAM</b></td>
-        <td></td>
-        <td class="num"><b>${format(sumDueAll)}</b></td>
-        <td class="num"><b>${format(sumPaidAll)}</b></td>
-        <td class="num"><b>${format(diffAll)}</b></td>
-      </tr>`;
-  }
 }
 
 function ensureExtraReportYears(){

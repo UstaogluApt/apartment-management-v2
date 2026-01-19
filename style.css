@@ -221,46 +221,77 @@ input,select,textarea{width:100%;padding:10px 12px;border:1px solid var(--border
 
 
 /* ===== Monthly cell visual (Reports) ===== */
-.data-table td.mtd{ padding: 6px 6px; text-align:center; }
+.data-table td.mtd, .tbl td.mtd{ padding: 6px 6px; text-align:center; }
+
 .mcell{
   position: relative;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  min-height: 42px;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  min-height: 46px;
   border-radius: 12px;
-  border: 1px solid rgba(0,0,0,.08);
-  padding: 6px 8px;
-  line-height: 1.1;
+  border: 1px solid #E5E7EB;
+  padding: 8px 10px;
+  overflow:hidden;
 }
-.mcell .micon{
-  width: 22px;
-  height: 22px;
-  border-radius: 999px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
+
+/* Default: only mask/icon is visible. On hover: show numbers behind. */
+.mcell .mcontent{
+  position: relative;
+  z-index: 2;
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+  gap:2px;
+  opacity: 0;
+  transform: translateY(2px);
+  transition: opacity .15s ease, transform .15s ease;
+  font-variant-numeric: tabular-nums;
+}
+.mcell:hover .mcontent{
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.mcell .mdue{ font-weight: 800; }
+.mcell .mpaid, .mcell .mrem{ font-size: 11px; opacity: .95; }
+
+/* Mask layer */
+.mcell .mmask{
+  position:absolute;
+  inset:0;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  z-index: 1;
+  pointer-events:none;
+}
+.mcell .mmask::before{
   font-weight: 900;
-  font-size: 12px;
-  border: 1px solid rgba(0,0,0,.10);
-  background: rgba(255,255,255,.55);
+  line-height: 1;
+  font-size: 36px;
+  opacity: 1;
+  transform: scale(1);
+  transition: opacity .15s ease, transform .15s ease;
+  text-shadow: 0 1px 0 rgba(0,0,0,.08);
 }
-.mcell .mvals{ display:flex; flex-direction:column; align-items:center; }
-.mcell .mdue{ font-weight: 800; font-variant-numeric: tabular-nums; }
-.mcell .mpaid{ font-size: 11px; opacity: .9; font-variant-numeric: tabular-nums; }
+.mcell:hover .mmask::before{
+  opacity: .18;
+  transform: scale(1.03);
+}
 
-.mcell.ok{ background: rgba(46, 204, 113, .18); color:#0e6b3a; }
-.mcell.ok .micon{ color:#0e6b3a; }
+/* Status visuals */
+.mcell.ok{ background:#D1FAE5; color:#065F46; }
+.mcell.ok .mmask::before{ content:'✓'; color:#065F46; }
 
-.mcell.partial{ background: rgba(241, 196, 15, .20); color:#8a6d07; }
-.mcell.partial .micon{ color:#8a6d07; }
+.mcell.bad{ background:#FEE2E2; color:#7F1D1D; }
+.mcell.bad .mmask::before{ content:'✕'; color:#7F1D1D; }
 
-.mcell.bad{ background: rgba(231, 76, 60, .16); color:#9b1c12; }
-.mcell.bad .micon{ color:#9b1c12; }
+.mcell.partial{ background:#FEF9C3; color:#7C5C00; }
+.mcell.partial .mmask::before{ content:'●'; color:#F59E0B; font-size: 30px; }
 
-.mcell.none{ background: rgba(0,0,0,.05); color:#666; }
-.mcell.none .micon{ color:#666; }
+.mcell.none{ background:#F3F4F6; color:#6B7280; }
+.mcell.none .mmask::before{ content:''; }
 
 /* ===== Premium badges with icons ===== */
 .badge{ position: relative; }
