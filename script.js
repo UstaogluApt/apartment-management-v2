@@ -698,6 +698,147 @@ async function getExtraPaymentForYear(year){
   try{ return await getExtraPaymentDoc(year); }catch(e){ console.warn('extraPayments read failed', e); return null; }
 }
 
+// ===== Extra payment per-flat editor (items) =====
+let extraItemsState = { year: '', title: '', amount: 0, items: {}, rows: [] };
+
+function ensureExtraItemsModal(){
+  if(qs('#modalExtraItems')) return;
+  const wrap = document.createElement('div');
+  wrap.className = 'modal hidden';
+  wrap.id = 'modalExtraItems';
+  wrap.innerHTML = `
+    <div class="modal-card" style="max-width:820px">
+      <div class="modal-head">
+        <h3 id="extraItemsTitle">🏠 Daire Bazlı Ek Ödeme</h3>
+        <button class="icon-close" data-close>✖</button>
+      </div>
+      <div class="row-gap" style="flex-wrap:wrap;align-items:center;margin-bottom:10px">
+        <span class="pill" id="extraItemsYearPill">Yıl: —</span>
+        <span class="pill" id="extraItemsBasePill">Varsayılan: —</span>
+        <button class="btn outline" id="extraItemsApplyBase">Boşlara uygula</button>
+        <button class="btn outline" id="extraItemsClearAll">Tümünü temizle</button>
+      </div>
+      <div class="table-container" style="max-height:55vh">
+        <table class="tbl">
+          <thead>
+            <tr>
+              <th style="width:120px">Daire</th>
+              <th>Aktif Sakin</th>
+              <th style="width:180px">Tutar (₺)</th>
+              <th style="width:120px">Sil</th>
+            </tr>
+          </thead>
+          <tbody id="extraItemsTbody"></tbody>
+        </table>
+      </div>
+      <div class="modal-actions">
+        <button class="btn" data-close type="button">İptal</button>
+        <button class="btn primary" id="extraItemsSave" type="button">Kaydet</button>
+      </div>
+    </div>`;
+  document.body.appendChild(wrap);
+
+  // close listeners (added after initial binding)
+  wrap.querySelectorAll('[data-close]').forEach(b=>b.addEventListener('click', closeModals));
+
+  qs('#extraItemsApplyBase')?.addEventListener('click', ()=>{
+    const base = +extraItemsState.amount || 0;
+    extraItemsState.rows.forEach(flat=>{
+      if(extraItemsState.items[flat]==null || extraItemsState.items[flat]==='') extraItemsState.items[flat] = base;
+    });
+    renderExtraItemsTable();
+  });
+  qs('#extraItemsClearAll')?.addEventListener('click', ()=>{
+    extraItemsState.items = {};
+    renderExtraItemsTable();
+  });
+  qs('#extraItemsSave')?.addEventListener('click', async ()=>{
+    if(currentRole!=='admin'){ alert('Yetki yok'); return; }
+    await setExtraPaymentDoc(extraItemsState.year, { items: extraItemsState.items });
+    // refresh info text
+    try{
+      const y = String(extraItemsState.year);
+      const docx = await getExtraPaymentForYear(y);
+      const cnt = Object.keys(docx?.items||{}).length;
+      const info = qs('#extraInfo');
+      if(info && cnt>0){
+        info.innerHTML = `Kayıtlı: <b>${y}</b> — ${docx?.title?escapeHtml(docx.title)+' — ':''}<b>${fmtTRY.format(+docx?.amount||0)}</b> (daire başı / yıl) • <b>${cnt}</b> daire için özel tutar`;
+      }
+    }catch(e){}
+    closeModals();
+    alert('Daire bazlı tutarlar kaydedildi.');
+    try{ await renderExtraReportTable(); }catch(e){}
+    try{ await renderReportsTable(); }catch(e){}
+  });
+
+  // input handling
+  qs('#extraItemsTbody')?.addEventListener('input', (e)=>{
+    const tr = e.target.closest('tr');
+    if(!tr) return;
+    const flat = tr.getAttribute('data-flat');
+    if(!flat) return;
+    if(e.target.matches('input[data-key="amount"]')){
+      const v = e.target.value;
+      if(v==='' || isNaN(+v)) delete extraItemsState.items[flat];
+      else extraItemsState.items[flat] = +v;
+    }
+  });
+  qs('#extraItemsTbody')?.addEventListener('click', (e)=>{
+    const del = e.target.closest('button[data-del]');
+    if(!del) return;
+    const flat = del.getAttribute('data-del');
+    delete extraItemsState.items[flat];
+    renderExtraItemsTable();
+  });
+}
+
+async function openExtraItemsModal(year){
+  ensureExtraItemsModal();
+  const y = String(year);
+  const cfg = await getExtraPaymentForYear(y) || {};
+  extraItemsState.year = y;
+  extraItemsState.title = cfg.title || '';
+  extraItemsState.amount = +cfg.amount || 0;
+  extraItemsState.items = { ...(cfg.items||{}) };
+
+  const residents = await getResidentsCached();
+  const activeFlats = new Set(residents.filter(isResidentActive).map(r=>getResidentFlatNo(r).trim()).filter(Boolean));
+  const itemFlats = new Set(Object.keys(extraItemsState.items||{}));
+  extraItemsState.rows = Array.from(new Set([...activeFlats, ...itemFlats])).sort((a,b)=>(''+a).localeCompare((''+b),'tr',{numeric:true}));
+
+  const t = qs('#extraItemsTitle');
+  if(t) t.textContent = `🏠 Daire Bazlı Ek Ödeme (${y})`;
+  const yp = qs('#extraItemsYearPill');
+  if(yp) yp.textContent = `Yıl: ${y}`;
+  const bp = qs('#extraItemsBasePill');
+  if(bp) bp.textContent = `Varsayılan: ${format(extraItemsState.amount)}`;
+
+  renderExtraItemsTable();
+  openModal('#modalExtraItems');
+}
+
+function renderExtraItemsTable(){
+  const tb = qs('#extraItemsTbody');
+  if(!tb) return;
+  if(!extraItemsState.rows?.length){
+    tb.innerHTML = `<tr><td colspan="4" style="text-align:center;color:#777;padding:16px">Daire bulunamadı.</td></tr>`;
+    return;
+  }
+  getResidentsCached().then(residents=>{
+    tb.innerHTML = extraItemsState.rows.map(flat=>{
+      const name = getActiveResidentNameForFlat(flat, residents) || '<em>—</em>';
+      const amt = (extraItemsState.items[flat] != null) ? extraItemsState.items[flat] : '';
+      return `
+        <tr data-flat="${escapeHtml(flat)}">
+          <td><b>${escapeHtml(flat)}</b></td>
+          <td>${name}</td>
+          <td><input class="pill" data-key="amount" type="number" min="0" step="0.01" placeholder="${extraItemsState.amount||0}" value="${amt}" style="width:160px"></td>
+          <td><button class="btn small outline" data-del="${escapeHtml(flat)}">Sil</button></td>
+        </tr>`;
+    }).join('');
+  });
+}
+
 /* ===== Admin Info ===== */
 async function getAdminInfoDoc(){ const r=doc(db,'settings','adminInfo'); const s=await getDoc(r); return s.exists()?s.data():{}; }
 async function setAdminInfoDoc(data){ if(currentRole!=='admin') throw new Error('Yetki yok'); const r=doc(db,'settings','adminInfo'); return setDoc(r,{...data,updatedAt:serverTimestamp(),updatedBy:currentUser?.uid||null},{merge:true}); }
@@ -2205,6 +2346,7 @@ function feesToolbarHTML(){
         <select id="extraYear" class="pill"></select>
         <input id="extraTitle" class="pill" placeholder="Açıklama (örn: Asansör yenileme)" style="min-width:260px">
         <input id="extraAmount" type="number" min="0" step="0.01" class="pill" placeholder="Daire başı yıllık (₺)" style="width:220px">
+        <button id="extraPerFlat" class="btn outline admin-only" title="Daire bazlı tutar belirle">🏠 Daire Bazlı Ayarla</button>
         <button id="extraSave" class="btn primary admin-only">Kaydet</button>
       </div>
     </div>
@@ -2266,9 +2408,25 @@ async function ensureFeesUI(){
         try{ await renderReportsTable(); }catch(e){}
       });
 
+      // Per-flat editor
+      qs('#extraPerFlat')?.addEventListener('click', async ()=>{
+        if(currentRole!=='admin'){ alert('Yetki yok'); return; }
+        const y = extraYearSel.value;
+        await openExtraItemsModal(y);
+      });
+
       // initial
       loadExtraUI();
     }
+
+
+    /* ===== Ek Ödeme: Daire Bazlı Ayarlama (items) ===== */
+    qs('#extraPerFlat')?.addEventListener('click', async ()=>{
+      if(currentRole!=='admin'){ alert('Sadece yönetici işlem yapabilir.'); return; }
+      const y = qs('#extraYear')?.value || String(new Date().getFullYear());
+      await openExtraItemsModal(y);
+    });
+
 
 
     const onChange = async ()=>{ await loadFeesForSelectors(); await renderFeesTable(); };
@@ -2453,6 +2611,8 @@ async function exportFeesCSV(){
   a.download = `fees-${feesState.ym}.csv`;
   a.click();
 }
+
+
 
 /* ==================== Modals ==================== */
 const backdrop = qs('#modalBackdrop');
