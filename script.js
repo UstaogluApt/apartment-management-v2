@@ -63,6 +63,17 @@ function toISODateInput(v){
   const d = new Date(v);
   return new Date(d.getTime() - d.getTimezoneOffset()*60000).toISOString().slice(0,10);
 }
+
+// Current date helpers (for default form values)
+function nowYM(){
+  const d = new Date();
+  const y = d.getFullYear();
+  const m = String(d.getMonth()+1).padStart(2,'0');
+  return `${y}-${m}`;
+}
+function todayISO(){
+  return toISODateInput(new Date());
+}
 function modalSel(...cands){ for(const s of cands){ if(qs(s)) return s; } return cands[0]; }
 
 function statusToTR(s){
@@ -676,6 +687,27 @@ async function deleteAnnouncement(id){ if(currentRole!=='admin') throw new Error
 /* ===== Fees (Aidat) ===== */
 async function getFeesDoc(ym){ const r=doc(db,'fees',ym); const s=await getDoc(r); return s.exists()?{id:ym,...s.data()}:null; }
 async function setFeesDoc(ym,data){ if(currentRole!=='admin') throw new Error('Yetki yok'); const r=doc(db,'fees',ym); return setDoc(r,{ym, ...data, updatedAt:serverTimestamp(),updatedBy:currentUser?.uid||null}); }
+
+// Lightweight caches (avoid repeated reads while typing)
+const _feesDocCache = new Map();
+async function getFeesDocCached(ym){
+  const key = String(ym||'').trim();
+  if(!key) return null;
+  if(_feesDocCache.has(key)) return _feesDocCache.get(key);
+  const v = await getFeesDoc(key);
+  _feesDocCache.set(key, v);
+  return v;
+}
+
+const _extraDocCache = new Map();
+async function getExtraPaymentDocCached(year){
+  const key = String(year||'').trim();
+  if(!key) return null;
+  if(_extraDocCache.has(key)) return _extraDocCache.get(key);
+  const v = await getExtraPaymentDoc(key);
+  _extraDocCache.set(key, v);
+  return v;
+}
 
 /* ===== Extra Payments (Yıllık Ek Ödeme) ===== */
 async function getExtraPaymentDoc(year){
@@ -1838,6 +1870,20 @@ async function enhancePaymentForm(){
     });
   }
 
+  // Default auto-fill: flatNo -> resident/payer, period (YYYY-MM), amount, date
+  const flatInp = f.querySelector('input[name="flatNo"]');
+  if(flatInp && !flatInp.dataset.autofillBound){
+    flatInp.dataset.autofillBound = '1';
+    const handler = async ()=>{ await applyPaymentDefaultsFromFlat({ forceAmount:false }); };
+    flatInp.addEventListener('change', handler);
+    flatInp.addEventListener('blur', handler);
+  }
+  const typSel = qs('#paymentType');
+  if(typSel && !typSel.dataset.autofillBound){
+    typSel.dataset.autofillBound = '1';
+    typSel.addEventListener('change', async ()=>{ await applyPaymentDefaultsFromFlat({ forceAmount:true }); });
+  }
+
   // Açıklama alanı (Ek ödeme için zorunlu)
   if(!qs('#paymentDescription')){
     const periodWrapRef =
@@ -1860,6 +1906,86 @@ async function enhancePaymentForm(){
 
 function paymentPeriod(rec){
   return ((rec?.month ?? rec?.period ?? '') + '').trim();
+}
+
+function getActiveResidentForFlat(flatNo, residents){
+  const f = String(flatNo||'').trim();
+  if(!f) return null;
+  const list = (residents||[]).filter(r=> getResidentFlatNo(r).trim() === f);
+  return list.find(isResidentActive) || list[0] || null;
+}
+
+async function getDefaultAmountForFlatAndType(flatNo, type, ym){
+  const flat = String(flatNo||'').trim();
+  if(!flat) return '';
+
+  if(type === 'Extra'){
+    const year = String((ym||nowYM()).slice(0,4));
+    const doc = await getExtraPaymentDocCached(year);
+    const items = doc?.items || {};
+    const v = (items && items[flat] != null) ? items[flat] : (doc?.amount ?? '');
+    return (v==null || v==='') ? '' : +v;
+  }
+
+  const fees = await getFeesDocCached(ym||nowYM());
+  const items = fees?.items || {};
+  const v = (items && items[flat] != null) ? items[flat] : (fees?.defaultAmount ?? '');
+  return (v==null || v==='') ? '' : +v;
+}
+
+// Apply defaults when a flat number is entered in the Payment modal.
+// - residentSelect + payerName = active resident of that flat
+// - period = current YYYY-MM (if empty)
+// - date = today (if empty)
+// - amount = aidat/extra default for that flat+month
+async function applyPaymentDefaultsFromFlat({ forceAmount=false } = {}){
+  const f = qs('#formPayment');
+  if(!f) return;
+
+  const flatInp = f.querySelector('input[name="flatNo"]');
+  const flat = String(flatInp?.value||'').trim();
+  if(!flat) return;
+
+  const residents = await getResidentsCached();
+  const active = getActiveResidentForFlat(flat, residents);
+
+  // Set resident select + hidden id
+  const sel = qs('#residentSelect');
+  const idInp = f.querySelector('input[name="residentId"]');
+  if(active){
+    if(sel) sel.value = active.id;
+    if(idInp) idInp.value = active.id;
+  }
+
+  // Set payer default to resident name
+  const payerInp = f.querySelector('input[name="payerName"]');
+  if(payerInp && active?.name){
+    payerInp.value = active.name;
+  }
+
+  // Period default
+  const perField = f.querySelector('[name="period"], [name="month"]');
+  if(perField && !perField.value){
+    perField.value = nowYM();
+  }
+  const ym = perField?.value || nowYM();
+
+  // Date default
+  const dateInp = f.querySelector('input[name="date"]');
+  if(dateInp && !dateInp.value){
+    dateInp.value = todayISO();
+  }
+
+  // Amount default
+  const typSel = qs('#paymentType');
+  const type = (typSel?.value || 'Due');
+  const amtInp = f.querySelector('input[name="amount"]');
+  if(amtInp){
+    if(forceAmount || !amtInp.value){
+      const v = await getDefaultAmountForFlatAndType(flat, type, ym);
+      if(v!=='' && v!=null) amtInp.value = v;
+    }
+  }
 }
 async function migratePaymentsFillFlatNo(){
   // Eski kayıtları otomatik toparla: flatNo yoksa residentId'den doldur.
@@ -1915,8 +2041,9 @@ function toggleMonthVisibility(){
     if(monthField){
       monthField.required = false;
       monthField.removeAttribute('required');
-      monthField.value = '';
-      monthField.disabled = true;
+      // Keep value so Ek Ödeme kayıtlarında da varsayılan ay yazılabilsin
+      if(!monthField.value) monthField.value = nowYM();
+      monthField.disabled = false;
     }
     if(descWrap) descWrap.style.display = '';
     if(descInp){ descInp.required = true; descInp.setAttribute('required',''); }
@@ -2638,6 +2765,12 @@ qs('#addPayment')?.addEventListener('click', async (e)=>{
   const sel = qs('#residentSelect'); if(sel) sel.value='';
   const idInp = qs('input[name="residentId"]'); if(idInp) idInp.value='';
   const typSel = qs('#paymentType'); if(typSel) typSel.value='Due';
+  // Defaults: current month + today
+  const f = qs('#formPayment');
+  const perField = f?.querySelector('[name="period"], [name="month"]');
+  if(perField) perField.value = nowYM();
+  const dateInp = f?.querySelector('input[name="date"]');
+  if(dateInp) dateInp.value = todayISO();
   toggleMonthVisibility();
   openModal(modalSel('#modalPayment','#paymentModal'));
 });
