@@ -221,7 +221,7 @@ input,select,textarea{width:100%;padding:10px 12px;border:1px solid var(--border
 
 
 /* ===== Monthly cell visual (Reports) ===== */
-.data-table td.mtd{ padding: 6px 6px; text-align:center; }
+.tbl.report td.mtd{ padding: 6px 6px; text-align:center; }
 .mcell{
   position: relative;
   display: flex;
@@ -269,10 +269,182 @@ input,select,textarea{width:100%;padding:10px 12px;border:1px solid var(--border
 .badge.bad::before{ content:'✕'; font-weight:900; margin-right:6px; }
 
 /* Money columns centered (reports) */
-.data-table td.num, .data-table th.num{ text-align:center; font-variant-numeric: tabular-nums; }
+.tbl.report td.num, .tbl.report th.num{ text-align:center; font-variant-numeric: tabular-nums; }
 
 
 /* ===== Row total visualization (Reports) ===== */
 .sum-ok{ background: rgba(46, 204, 113, .14) !important; color:#0e6b3a; }
 .sum-partial{ background: rgba(241, 196, 15, .16) !important; color:#8a6d07; }
 .sum-bad{ background: rgba(231, 76, 60, .14) !important; color:#9b1c12; }
+
+
+/* ===== Reports: Daha okunakli / estetik tablo ===== */
+.table-container.sticky{ overflow:auto; max-height: 68vh; border-radius:12px; }
+.tbl.report{ table-layout: fixed; }
+.tbl.report th, .tbl.report td{ padding:10px 10px; }
+.tbl.report td{ vertical-align: middle; }
+
+/* Sticky header */
+.table-container.sticky .tbl.report thead th{
+  position: sticky;
+  top: 0;
+  z-index: 3;
+}
+/* Sticky first column (Daire) */
+.table-container.sticky .tbl.report th:first-child,
+.table-container.sticky .tbl.report td:first-child{
+  position: sticky;
+  left: 0;
+  z-index: 2;
+  background: #fff;
+}
+.table-container.sticky .tbl.report thead th:first-child{ z-index: 4; }
+
+/* Daha yumuşak zebra + hover */
+.tbl.report tbody tr:nth-child(even) td{ background: rgba(17,24,39,.02); }
+.tbl.report tbody tr:hover td{ background: rgba(95,82,221,.08); }
+
+/* Aylik hucre (sade) */
+body.rep-compact .mcell{ min-height: 36px; padding: 6px 8px; gap: 6px; }
+body.rep-compact .mcell .mvals{ display:none; }
+body.rep-compact .mcell .mmini{ display:block; font-weight:800; font-size:12px; font-variant-numeric: tabular-nums; }
+body:not(.rep-compact) .mcell .mmini{ display:none; }
+
+/* Toplam kolonlari daha net */
+.tbl.report td.num, .tbl.report th.num{ text-align:right; font-variant-numeric: tabular-nums; }
+.tbl.report td.num b{ letter-spacing: .2px; }
+
+/* Reports tabs */
+.rep-tabs{ display:flex; gap:8px; align-items:center; }
+.tab-btn{
+  border:1px solid #cfd6e6;
+  background:#fff;
+  color:#334;
+  padding:8px 12px;
+  border-radius:999px;
+  font-weight:800;
+  cursor:pointer;
+}
+.tab-btn.active{ background:linear-gradient(135deg,#6a5ae0,#9a6ee0); color:#fff; border-color:transparent; }
+
+.rep-compact{ display:flex; align-items:center; gap:8px; padding:6px 10px; border:1px solid #cfd6e6; border-radius:999px; background:#fff; }
+.rep-compact input{ width:auto; }
+
+/* Mobile: sticky first col kapat (kucuk ekranda kaydirma daha rahat) */
+@media (max-width: 720px){
+  .table-container.sticky .tbl.report th:first-child,
+  .table-container.sticky .tbl.report td:first-child{ position: static; }
+  .table-container.sticky{ max-height: none; }
+}
+
+#reports .table-container{ overflow:auto; }
+
+
+/* ===== Reports: readability ===== */
+.rep-tabs{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin:0 0 12px}
+.rep-tabs .tab-btn{border:1px solid var(--border);background:#fff;border-radius:999px;padding:8px 12px;font-weight:800;cursor:pointer;box-shadow:var(--shadow)}
+.rep-tabs .tab-btn.active{background:linear-gradient(135deg,#667eea,#764ba2);color:#fff;border-color:transparent}
+.rep-tabs .tab-opt{display:flex;align-items:center;gap:8px;margin-left:auto;font-weight:700;color:var(--muted);user-select:none}
+.rep-tabs input{width:auto}
+
+/* tighter + sticky report table */
+.table-container.report{max-height:70vh; overflow:auto}
+.tbl.report th{position:sticky;top:0;z-index:2}
+.tbl.report th:first-child{left:0;z-index:4}
+.tbl.report td:first-child{position:sticky;left:0;z-index:3;background:#fff}
+.tbl.report tr:hover td:first-child{background:#f3f4ff}
+.tbl.report td, .tbl.report th{padding:10px 10px}
+
+/* Month cell: compact mode */
+.mcell.compact{gap:10px;justify-content:flex-start}
+.mcell.compact .mmain{font-weight:900;font-variant-numeric:tabular-nums}
+.mcell.compact .mmini{font-size:11px;opacity:.85}
+
+/* make numbers calmer */
+.tbl.report .num{white-space:nowrap}
+
+
+/* ===== Reports table polish ===== */
+.rep-tabs{
+  display:flex;
+  align-items:center;
+  gap:10px;
+  margin: 0 0 12px;
+  flex-wrap: wrap;
+}
+.rep-tabs .tab-btn{
+  border:1px solid var(--border);
+  background:#fff;
+  color:var(--text);
+  padding:10px 12px;
+  border-radius:12px;
+  font-weight:800;
+  cursor:pointer;
+  box-shadow: var(--shadow);
+}
+.rep-tabs .tab-btn.active{
+  background: linear-gradient(135deg,#667eea,#764ba2);
+  color:#fff;
+  border-color: rgba(255,255,255,.2);
+}
+.rep-tabs .tab-opt{
+  margin-left:auto;
+  display:flex;
+  align-items:center;
+  gap:8px;
+  background:#fff;
+  border:1px solid var(--border);
+  border-radius:12px;
+  padding:10px 12px;
+  box-shadow: var(--shadow);
+  font-weight:700;
+  color:var(--text);
+}
+.rep-tabs input{ width:auto; }
+
+/* Make reports table easier on the eyes */
+.table-container.report{
+  overflow:auto;
+  max-height: 72vh;
+  border-radius: 14px;
+}
+.tbl.report{
+  border-radius: 14px;
+}
+.tbl.report th,
+.tbl.report td{
+  padding: 10px 10px;
+}
+
+/* Sticky header + first column (within scroll container) */
+.tbl.report thead th{
+  position: sticky;
+  top: 0;
+  z-index: 3;
+}
+.tbl.report th:first-child,
+.tbl.report td:first-child{
+  position: sticky;
+  left: 0;
+  z-index: 2;
+  background:#fff;
+}
+.tbl.report thead th:first-child{
+  z-index: 4;
+  background: linear-gradient(135deg,#667eea,#764ba2);
+}
+
+/* Reports: reduce noise */
+.tbl.report td.mtd{ padding: 6px 6px; }
+.tbl.report tr:nth-child(even) td{ background:#fbfcff; }
+.tbl.report tr:hover td{ background:#f3f4ff; }
+
+/* Monthly cell compact mode */
+.mcell.compact{ gap: 6px; padding: 6px 8px; min-height: 38px; }
+.mcell .mmain{ display:none; font-weight: 800; font-variant-numeric: tabular-nums; }
+.mcell.compact .mdue,
+.mcell.compact .mpaid{ display:none; }
+.mcell.compact .mmain{ display:block; }
+
+/* Numeric columns align */
+.tbl.report td.num, .tbl.report th.num{ text-align:center; font-variant-numeric: tabular-nums; }

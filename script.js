@@ -63,15 +63,6 @@ function toISODateInput(v){
   const d = new Date(v);
   return new Date(d.getTime() - d.getTimezoneOffset()*60000).toISOString().slice(0,10);
 }
-
-function todayISO(){
-  // local date => YYYY-MM-DD
-  return new Date(Date.now() - new Date().getTimezoneOffset()*60000).toISOString().slice(0,10);
-}
-function currentYM(){
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
-}
 function modalSel(...cands){ for(const s of cands){ if(qs(s)) return s; } return cands[0]; }
 
 function statusToTR(s){
@@ -221,12 +212,44 @@ function monthCellHTML(due, paid){
   const st = monthStatus(due, paid);
   const rem = Math.max(0, (+due||0) - (+paid||0));
   const tip = `Aidat: ${format(due)} | Ödenen: ${format(paid)} | Kalan: ${format(rem)}`;
+  const compact = getReportsCompact();
+
+  if(compact){
+    const main = rem<=0 ? '0' : format(rem);
+    return `<div class="mcell ${st.cls} compact" title="${tip}">
+      <span class="micon">${st.icon}</span>
+      <div class="mvals">
+        <div class="mmain">${main}</div>
+        <div class="msub">kalan</div>
+      </div>
+    </div>`;
+  }
+
   return `<div class="mcell ${st.cls}" title="${tip}">
     <span class="micon">${st.icon}</span>
     <div class="mvals">
       <div class="mdue">${format(due)}</div>
       <div class="mpaid">${format(paid)}</div>
     </div>
+  </div>`;
+}
+
+
+function moneyBoxHTML(amountText, cls, label, title){
+  const tip = title || label || '';
+  const compact = getReportsCompact();
+  if(compact){
+    return `<div class="mcell ${cls} compact" title="${escapeHtml(tip)}">
+      <span class="micon">₺</span>
+      <div class="mvals">
+        <div class="mmain">${amountText}</div>
+        <div class="msub">${escapeHtml(label||'')}</div>
+      </div>
+    </div>`;
+  }
+  return `<div class="mcell ${cls}" title="${escapeHtml(tip)}">
+    <span class="micon">₺</span>
+    <div class="mvals"><div class="mdue">${amountText}</div><div class="mpaid">${escapeHtml(label||'')}</div></div>
   </div>`;
 }
 
@@ -267,8 +290,105 @@ async function ensureReportsUI(){
   qs('#repFlatPDF')?.addEventListener('click', generateFlatAnnualPDF);
   qs('#repMonthlyPDF')?.addEventListener('click', generateMonthlySummaryPDF);
   try{ enforceExportVisibility(); }catch{}
+  // Reports UI: sade görünüm + sekmeler
+  const compact = qs('#repCompact');
+  if(compact && !compact.dataset.bound){
+    const saved = localStorage.getItem('repCompact')
+    if(saved === '0') compact.checked = false;
+    document.body.classList.toggle('rep-compact', compact.checked);
+    compact.addEventListener('change', ()=>{
+      localStorage.setItem('repCompact', compact.checked ? '1':'0');
+      document.body.classList.toggle('rep-compact', compact.checked);
+    });
+    compact.dataset.bound = '1';
+  }
+
+  const tabAidat = qs('#tabAidat');
+  const tabExtra = qs('#tabExtra');
+  if(tabAidat && tabExtra && !tabAidat.dataset.bound){
+    const showAidat = ()=>{
+      tabAidat.classList.add('active');
+      tabExtra.classList.remove('active');
+      // Aidat paneli zaten görünür; Ek ödeme panelini gizle
+      const extraPanel = qs('#extraReportPanel');
+      if(extraPanel) extraPanel.classList.add('hidden');
+      // aidat tablo wrap görünür
+      const aidatWrap = qs('#aidatReportWrap');
+      if(aidatWrap) aidatWrap.classList.remove('hidden');
+    };
+    const showExtra = async ()=>{
+      tabExtra.classList.add('active');
+      tabAidat.classList.remove('active');
+      const aidatWrap = qs('#aidatReportWrap');
+      if(aidatWrap) aidatWrap.classList.add('hidden');
+      const extraPanel = qs('#extraReportPanel');
+      if(extraPanel) extraPanel.classList.remove('hidden');
+      try{ ensureExtraReportYears(); await renderExtraReportTable(); }catch(e){ console.error(e); }
+    };
+    tabAidat.addEventListener('click', ()=>{ showAidat(); });
+    tabExtra.addEventListener('click', ()=>{ showExtra(); });
+    // default
+    showAidat();
+    tabAidat.dataset.bound = '1';
+  }
+
 }
 
+
+
+/* ==================== Reports UI Enhancements (Tabs + Compact View) ==================== */
+let _reportsUIBound = false;
+let _reportsCompact = true;
+
+function getReportsCompact(){
+  const cb = qs('#repCompact');
+  if(cb) return !!cb.checked;
+  try{ return localStorage.getItem('repCompact') !== '0'; }catch{ return true; }
+}
+
+function ensureReportTabs(){
+  if(_reportsUIBound) return;
+  _reportsUIBound = true;
+
+  const tabDue = qs('#repTabDue');
+  const tabExtra = qs('#repTabExtra');
+  const duePanel = qs('#dueReportPanel');
+  const extraPanel = qs('#extraReportPanel');
+  const compactCb = qs('#repCompact');
+
+  // restore compact preference
+  try{
+    const saved = localStorage.getItem('repCompact');
+    if(compactCb && saved != null) compactCb.checked = (saved !== '0');
+  }catch{}
+
+  function activate(which){
+    if(which === 'extra'){
+      if(duePanel) duePanel.classList.add('hidden');
+      if(extraPanel) extraPanel.classList.remove('hidden');
+      tabDue?.classList.remove('active');
+      tabExtra?.classList.add('active');
+    }else{
+      if(extraPanel) extraPanel.classList.add('hidden');
+      if(duePanel) duePanel.classList.remove('hidden');
+      tabExtra?.classList.remove('active');
+      tabDue?.classList.add('active');
+    }
+  }
+
+  tabDue?.addEventListener('click', ()=> activate('due'));
+  tabExtra?.addEventListener('click', async ()=>{ activate('extra'); try{ ensureExtraReportYears(); await renderExtraReportTable(); }catch(e){ console.error(e);} });
+
+  compactCb?.addEventListener('change', ()=>{
+    try{ localStorage.setItem('repCompact', compactCb.checked ? '1' : '0'); }catch{}
+    // re-render both tables for consistent cells
+    renderReportsTable?.();
+    renderExtraReportTable?.();
+  });
+
+  // default
+  activate('due');
+}
 async function getYearFeesMap(year){
   const out = {}; // {flat: {'01': amount, ...}}
   const docs = await Promise.all(
@@ -424,7 +544,7 @@ async function renderExtraReportTable(){
   const year = ysel.value || String(new Date().getFullYear());
   const cfg = await getExtraPaymentForYear(year);
   const amount = +((cfg&&cfg.amount)||0);
-  const items = (cfg && cfg.items) ? cfg.items : {};
+  const items = (cfg&&cfg.items)||{};
   const title = (cfg&&cfg.title)||'Yıllık Ek Ödeme';
 
   // Fee selector (tek kalem - yıllık)
@@ -448,17 +568,18 @@ async function renderExtraReportTable(){
     extraPaidByFlat[flat] = (extraPaidByFlat[flat]||0) + (+p.amount||0);
   });
 
-  tbody.innerHTML = flats.map(f=>{
+    tbody.innerHTML = flats.map(f=>{
     const due = (items && items[f] != null) ? (+items[f]||0) : amount;
     const paid = extraPaidByFlat[f]||0;
-    const rem = due - paid;
-    const st = rem<=0 ? `<span class="badge ok">Tam</span>` : (paid>0 ? `<span class="badge warn">Kısmi</span>` : `<span class="badge bad">Ödenmedi</span>`);
+    const rem = Math.max(0, due - paid);
+    const st = monthStatus(due, paid);
+    const stBadge = rem<=0 ? `<span class="badge ok">Tam</span>` : (paid>0 ? `<span class="badge warn">Kısmi</span>` : `<span class="badge bad">Ödenmedi</span>`);
     return `<tr>
       <td><b>${escapeHtml(f)}</b></td>
-      <td class="num money ${monthStatus(due, paid).cls}">${format(due)}</td>
-      <td class="num money ${monthStatus(due, paid).cls}">${format(paid)}</td>
-      <td class="num money ${monthStatus(due, paid).cls}"><b>${format(rem)}</b></td>
-      <td>${st}</td>
+      <td class="mtd">${moneyBoxHTML(format(due), 'none', 'Borç', `Borç: ${format(due)}`)}</td>
+      <td class="mtd">${moneyBoxHTML(format(paid), paid>0 ? 'ok':'none', 'Ödenen', `Ödenen: ${format(paid)}`)}</td>
+      <td class="mtd">${moneyBoxHTML(format(rem), st.cls, 'Kalan', `Kalan: ${format(rem)}`)}</td>
+      <td>${stBadge}</td>
     </tr>`;
   }).join('') || `<tr><td colspan="5" class="muted">Kayıt bulunamadı.</td></tr>`;
 }
@@ -644,7 +765,7 @@ qs('#btnDashboard')?.addEventListener('click',()=>showPage('dashboard'));
 qs('#btnResidents')?.addEventListener('click',async ()=>{ showPage('residents'); await renderResidentsTable(); });
 qs('#btnPayments')?.addEventListener('click',async ()=>{ showPage('payments'); await ensurePaymentsUI(); await renderPaymentsTable(); });
 qs('#btnExpenses')?.addEventListener('click',async ()=>{ showPage('expenses'); await ensureExpensesUI(); await renderExpensesTable(); });
-qs('#btnReports')?.addEventListener('click',async ()=>{ showPage('reports'); await (ensureReportsUI?.()||Promise.resolve()); await (renderReportsTable?.()||Promise.resolve()); try{ ensureExtraReportYears(); await renderExtraReportTable(); }catch(e){ console.error(e);} });
+qs('#btnReports')?.addEventListener('click',async ()=>{ showPage('reports'); ensureReportTabs(); bindReportsCompact(); bindReportTabs(); await (ensureReportsUI?.()||Promise.resolve()); await (renderReportsTable?.()||Promise.resolve()); try{ ensureExtraReportYears(); await renderExtraReportTable(); }catch(e){ console.error(e);} });
 qs('#btnFees')?.addEventListener('click',async ()=>{ showPage('fees'); await ensureFeesUI(); await renderFeesTable(); });
 
 /* ==================== Firestore wrappers ==================== */
@@ -1603,8 +1724,6 @@ async function onPaymentsTableClick(e){
       if(perField) perField.value = typeVal === 'Extra' ? '' : (paymentPeriod(rec) || '');
 
       setInputValue(f, 'input[name="amount"]',      rec.amount ?? '');
-      const amtInp = f.querySelector('input[name="amount"]');
-      if(amtInp) amtInp.dataset.auto = '0';
       setInputValue(f, 'input[name="date"]',        rec.date ? toISODateInput(rec.date) : '');
       setInputValue(f, 'input[name="description"]', rec.description || '');
 
@@ -1712,129 +1831,6 @@ async function enhancePaymentForm(){
   }
 
   toggleMonthVisibility();
-
-  // FlatNo -> sakin + varsayılan alanlar (1 kere bağla)
-  const flatInp = f.querySelector('input[name="flatNo"]');
-  if(flatInp && !flatInp.dataset.bound){
-    flatInp.dataset.bound = '1';
-    let t = null;
-    const run = async ()=>{
-      const flat = String(flatInp.value||'').trim();
-      await applyPaymentDefaults(f, { preferFillResident: true, preferFillAmounts: true, flatOverride: flat });
-    };
-    flatInp.addEventListener('input', ()=>{
-      clearTimeout(t);
-      t = setTimeout(run, 250);
-    });
-    flatInp.addEventListener('change', run);
-  }
-
-  // Ay değişince (Aidat türünde) tutarı otomatik güncelle (boşsa veya otomatikse)
-  const monthInp = f.querySelector('input[name="month"], input[name="period"]');
-  if(monthInp && !monthInp.dataset.bound){
-    monthInp.dataset.bound = '1';
-    monthInp.addEventListener('change', async ()=>{
-      await applyPaymentDefaults(f, { preferFillResident: false, preferFillAmounts: true });
-    });
-  }
-
-  // Tür değişince tutar/ay görünürlüğü
-  const typSel = qs('#paymentType');
-  if(typSel && !typSel.dataset.bound){
-    typSel.dataset.bound = '1';
-    typSel.addEventListener('change', async ()=>{
-      toggleMonthVisibility();
-      await applyPaymentDefaults(f, { preferFillResident: false, preferFillAmounts: true });
-    });
-  }
-
-  // Kullanıcı tutarı elle değiştirirse otomatik doldurma kapansın
-  const amountInp = f.querySelector('input[name="amount"]');
-  if(amountInp && !amountInp.dataset.bound){
-    amountInp.dataset.bound = '1';
-    amountInp.addEventListener('input', ()=>{ amountInp.dataset.auto = '0'; });
-  }
-}
-
-async function getDueAmountForFlatYM(flatNo, ym){
-  if(!flatNo || !ym) return 0;
-  const docx = await getFeesDoc(ym);
-  const def = +((docx&&docx.defaultAmount)||0);
-  const items = (docx&&docx.items)||{};
-  const key = String(flatNo).trim();
-  return (items[key] != null ? +items[key] : def) || 0;
-}
-
-async function getExtraAmountForFlatYear(flatNo, year){
-  if(!flatNo || !year) return 0;
-  const cfg = await getExtraPaymentForYear(String(year));
-  const def = +((cfg&&cfg.amount)||0);
-  const items = (cfg&&cfg.items)||{};
-  const key = String(flatNo).trim();
-  return (items[key] != null ? +items[key] : def) || 0;
-}
-
-async function applyPaymentDefaults(form, opts={}){
-  const f = form || qs('#formPayment');
-  if(!f) return;
-
-  const type = (qs('#paymentType')?.value || 'Due');
-  const flatInp = f.querySelector('input[name="flatNo"]');
-  const payerInp= f.querySelector('input[name="payerName"]');
-  const dateInp = f.querySelector('input[name="date"]');
-  const monthInp = f.querySelector('input[name="month"], input[name="period"]');
-  const amountInp= f.querySelector('input[name="amount"]');
-  const resIdInp = f.querySelector('input[name="residentId"]');
-  const resSel = qs('#residentSelect');
-
-  // default tarih
-  if(dateInp && !dateInp.value) dateInp.value = todayISO();
-
-  // default ay
-  if(type === 'Due' && monthInp && !monthInp.value) monthInp.value = currentYM();
-  if(type === 'Extra' && monthInp){
-    // ek ödemede ay alanı kullanılmıyor
-    if(monthInp.required) monthInp.required = false;
-    if(monthInp.value && monthInp.value.length>0) {
-      // düzenlemede mevcut kalsın; yeni eklemede boş
-    }
-  }
-
-  const flat = String(opts.flatOverride ?? (flatInp?.value||'')).trim();
-  if(flatInp && opts.flatOverride!=null) flatInp.value = flat;
-
-  // Daire -> Sakin eşleştir
-  if(opts.preferFillResident && flat){
-    const residents = await getResidentsCached();
-    const active = residents.find(r=> isResidentActive(r) && getResidentFlatNo(r).trim() === flat);
-    const any = residents.find(r=> getResidentFlatNo(r).trim() === flat);
-    const chosen = active || any;
-    if(chosen){
-      if(resIdInp) resIdInp.value = chosen.id || '';
-      if(resSel) resSel.value = chosen.id || '';
-      if(payerInp && !payerInp.value) payerInp.value = chosen.name || '';
-    }
-  }
-
-  // Tutar otomatik
-  if(opts.preferFillAmounts && amountInp){
-    const shouldFill = !amountInp.value || amountInp.dataset.auto === '1';
-    if(shouldFill && flat){
-      if(type === 'Due'){
-        const ym = (monthInp?.value || currentYM()).trim();
-        if(/^\d{4}-\d{2}$/.test(ym)){
-          const amt = await getDueAmountForFlatYM(flat, ym);
-          amountInp.value = String(amt || 0);
-          amountInp.dataset.auto = '1';
-        }
-      }else{
-        const y = (monthInp?.value||'').slice(0,4) || String(new Date().getFullYear());
-        const amt = await getExtraAmountForFlatYear(flat, y);
-        amountInp.value = String(amt || 0);
-        amountInp.dataset.auto = '1';
-      }
-    }
-  }
 }
 
 function paymentPeriod(rec){
@@ -2325,7 +2321,6 @@ function feesToolbarHTML(){
         <select id="extraYear" class="pill"></select>
         <input id="extraTitle" class="pill" placeholder="Açıklama (örn: Asansör yenileme)" style="min-width:260px">
         <input id="extraAmount" type="number" min="0" step="0.01" class="pill" placeholder="Daire başı yıllık (₺)" style="width:220px">
-        <button id="extraPerFlat" class="btn outline admin-only" type="button">Daire Bazlı Ayarla</button>
         <button id="extraSave" class="btn primary admin-only">Kaydet</button>
       </div>
     </div>
@@ -2387,12 +2382,6 @@ async function ensureFeesUI(){
         try{ await renderReportsTable(); }catch(e){}
       });
 
-      // Daire bazlı ek ödeme tutarı
-      qs('#extraPerFlat')?.addEventListener('click', async ()=>{
-        if(currentRole!=='admin'){ alert('Yetki yok'); return; }
-        await openExtraDuesModal(extraYearSel.value);
-      });
-
       // initial
       loadExtraUI();
     }
@@ -2415,87 +2404,6 @@ async function ensureFeesUI(){
 
     await loadFeesForSelectors();
   }
-}
-
-/* ===== Ek Ödeme: Daire Bazlı Tutar Modalı ===== */
-let _extraDuesYear = null;
-
-async function openExtraDuesModal(year){
-  const y = String(year || new Date().getFullYear());
-  _extraDuesYear = y;
-
-  const modal = qs('#modalExtraDues');
-  const tb = qs('#extraDuesTbody');
-  if(!modal || !tb){
-    alert('Daire bazlı ek ödeme penceresi bulunamadı.');
-    return;
-  }
-
-  const cfg = await getExtraPaymentForYear(y);
-  const defAmount = +((cfg&&cfg.amount)||0);
-  const items = {...((cfg&&cfg.items)||{})};
-
-  const [residents] = await Promise.all([getResidentsCached()]);
-  const flatsFromResidents = new Set(
-    (residents||[]).map(r=>getResidentFlatNo(r)).filter(Boolean)
-  );
-  Object.keys(items||{}).forEach(f=>flatsFromResidents.add(String(f).trim()));
-  const flats = Array.from(flatsFromResidents)
-    .map(f=>String(f).trim())
-    .filter(Boolean)
-    .sort((a,b)=>(''+a).localeCompare((''+b), 'tr', {numeric:true}));
-
-  qs('#extraDuesTitle') && (qs('#extraDuesTitle').textContent = `Daire Bazlı Tutarlar — ${y}`);
-  const hint = qs('#extraDuesHint');
-  if(hint){
-    hint.innerHTML = `Varsayılan yıllık tutar: <b>${format(defAmount)}</b>. Daireye özel girmek istemiyorsanız boş bırakın.`;
-  }
-
-  tb.innerHTML = flats.map(flat=>{
-    const activeName = getActiveResidentNameForFlat(flat, residents);
-    const v = (items[flat] != null ? +items[flat] : '');
-    return `<tr>
-      <td><b>${escapeHtml(flat)}</b></td>
-      <td>${escapeHtml(activeName || '—')}</td>
-      <td><input class="pill" style="width:160px" data-flat="${escapeHtml(flat)}" type="number" min="0" step="0.01" placeholder="${defAmount||0}" value="${v!==''?escapeHtml(v):''}"></td>
-    </tr>`;
-  }).join('') || `<tr><td colspan="3" class="muted" style="padding:14px">Daire bulunamadı.</td></tr>`;
-
-  // bind buttons once
-  const applyAll = qs('#extraDuesApplyAll');
-  if(applyAll && !applyAll.dataset.bound){
-    applyAll.dataset.bound = '1';
-    applyAll.addEventListener('click', ()=>{
-      if(!(defAmount>0)) return;
-      qsa('#extraDuesTbody input[data-flat]').forEach(inp=>{
-        if(!inp.value) inp.value = String(defAmount);
-      });
-    });
-  }
-
-  const saveBtn = qs('#extraDuesSave');
-  if(saveBtn && !saveBtn.dataset.bound){
-    saveBtn.dataset.bound = '1';
-    saveBtn.addEventListener('click', async ()=>{
-      if(currentRole!=='admin'){ alert('Yetki yok'); return; }
-      const yearNow = _extraDuesYear || String(new Date().getFullYear());
-      const patch = {};
-      qsa('#extraDuesTbody input[data-flat]').forEach(inp=>{
-        const flat = String(inp.getAttribute('data-flat')||'').trim();
-        const raw = (inp.value||'').trim();
-        if(!flat) return;
-        if(raw==='') return;
-        const n = +raw;
-        if(Number.isFinite(n) && n>=0) patch[flat] = n;
-      });
-      await setExtraPaymentDoc(yearNow, { items: patch });
-      closeModals();
-      try{ await renderExtraReportTable(); }catch(e){}
-      alert('Daire bazlı ek ödeme tutarları kaydedildi.');
-    });
-  }
-
-  openModal('#modalExtraDues');
 }
 
 async function loadFeesForSelectors(){
@@ -2683,14 +2591,10 @@ qs('#addPayment')?.addEventListener('click', async (e)=>{
   editingPaymentId=null;
   qs('#formPayment')?.reset();
   await enhancePaymentForm();
-  const amt = qs('#formPayment')?.querySelector('input[name="amount"]');
-  if(amt) delete amt.dataset.auto;
   const sel = qs('#residentSelect'); if(sel) sel.value='';
   const idInp = qs('input[name="residentId"]'); if(idInp) idInp.value='';
   const typSel = qs('#paymentType'); if(typSel) typSel.value='Due';
   toggleMonthVisibility();
-  // Varsayılanlar: tarih=bugün, ay=bu ay (YYYY-MM)
-  try{ await applyPaymentDefaults(qs('#formPayment'), { preferFillResident: false, preferFillAmounts: false }); }catch(e){}
   openModal(modalSel('#modalPayment','#paymentModal'));
 });
 qs('#addExpense')?.addEventListener('click', async (e)=>{
@@ -2698,9 +2602,6 @@ qs('#addExpense')?.addEventListener('click', async (e)=>{
   editingExpenseId = null;
   qs('#formExpense')?.reset();
   await enhanceExpenseForm();
-  // Tarih varsayılan: bugün
-  const dInp = qs('#formExpense')?.querySelector('input[name="date"]');
-  if(dInp && !dInp.value) dInp.value = todayISO();
   openModal(modalSel('#modalExpense','#expenseModal'));
 });
 qs('#setFee')?.addEventListener('click',async (e)=>{

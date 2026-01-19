@@ -139,7 +139,12 @@
 </div>
 </section>
 <section class="hidden" id="reports">
-<div class="panel">
+<div class="rep-tabs">
+  <button class="tab-btn active" id="repTabDue" type="button">🧾 Aidat Cetveli</button>
+  <button class="tab-btn" id="repTabExtra" type="button">🧾 Ek Ödeme</button>
+  <label class="tab-opt" title="Aylık hücrelerde daha az rakam gösterir"><input type="checkbox" id="repCompact" checked> Kompakt görünüm</label>
+</div>
+<div class="panel rep-panel">
 <div class="panel-head">
 <h2>📑 Yıllık Aidat Takip Cetveli</h2>
 <div class="row-gap" style="flex-wrap:wrap">
@@ -152,18 +157,27 @@
 <option value="10">Ekim</option><option value="11">Kasım</option><option value="12">Aralık</option>
 </select>
 <select id="repFlat"></select>
+
+<label class=\"rep-compact\" title=\"Tabloyu daha sade gösterir\">
+  <input type=\"checkbox\" id=\"repCompact\" checked>
+  <span>Sade Görünüm</span>
+</label>
+<div class=\"rep-tabs\">
+  <button class=\"tab-btn active\" type=\"button\" id=\"tabAidat\">Aidat</button>
+  <button class=\"tab-btn\" type=\"button\" id=\"tabExtra\">Ek Ödeme</button>
+</div>
 <button class="btn outline admin-only hidden" id="repExportCSV">CSV</button>
 <button class="btn outline admin-only hidden" id="repFlatPDF">PDF (Daire Bazlı)</button>
 <button class="btn outline admin-only hidden" id="repMonthlyPDF">Aylık İcmal PDF</button>
 </div>
 </div>
 <div class="muted" style="margin-bottom:8px">Hücrelerde <span class="badge paid">Tam</span> / <span class="badge partial">Kısmi</span> / <span class="badge unpaid">Yok</span> gösterilir.</div>
-<div class="table-container">
-<table class="tbl" id="repTbl"><thead id="repThead"></thead><tbody id="repTbody"></tbody><tfoot id="repTfoot"></tfoot></table>
+<div class="table-container report">
+<table class="tbl report" id="repTbl"><thead id="repThead"></thead><tbody id="repTbody"></tbody><tfoot id="repTfoot"></tfoot></table>
 </div>
 </div>
 
-<div class="panel mt" id="extraReportPanel">
+<div class="panel mt rep-view hidden" id="extraReportPanel">
   <div class="panel-head">
     <h3>🧾 Ek Ödeme Raporu</h3>
     <div class="row-gap" style="flex-wrap:wrap">
@@ -173,8 +187,8 @@
     </div>
   </div>
   <div class="muted" style="margin-bottom:8px">Seçtiğiniz ek ödeme kalemi için daire bazlı borç/ödeme/kalan durumunu gösterir.</div>
-  <div class="table-container">
-    <table class="tbl" id="extraRepTbl">
+  <div class="table-container report">
+    <table class="tbl report" id="extraRepTbl">
       <thead>
         <tr><th>Daire</th><th>Borç (₺)</th><th>Ödenen (₺)</th><th>Kalan (₺)</th><th>Durum</th></tr>
       </thead>
@@ -185,7 +199,7 @@
 
 </section>
 <section class="hidden" id="fees">
-<div class="panel">
+<div class="panel" id="dueReportPanel">
 <div class="panel-head"><h2>⚙️ Aidat / Ayarlar</h2><button class="btn primary admin-only hidden" id="setFee">📅 Ay Aidatı Tanımla</button></div>
 <p class="muted">Bu bölümden belirli aylar için aidat tutarlarını tanımlayabilirsiniz.</p>
 
