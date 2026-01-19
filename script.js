@@ -210,47 +210,23 @@ function monthStatus(due, paid){
 
 function monthCellHTML(due, paid){
   const st = monthStatus(due, paid);
-  const rem = Math.max(0, (+due||0) - (+paid||0));
-  const tip = `Aidat: ${format(due)} | Ödenen: ${format(paid)} | Kalan: ${format(rem)}`;
-  const compact = getReportsCompact();
+  const dueN = +due || 0;
+  const paidN = +paid || 0;
+  const rem = Math.max(0, dueN - paidN);
+  const tip = `Aidat: ${format(dueN)} | Ödenen: ${format(paidN)} | Kalan: ${format(rem)}`;
 
-  if(compact){
-    const main = rem<=0 ? '0' : format(rem);
-    return `<div class="mcell ${st.cls} compact" title="${tip}">
-      <span class="micon">${st.icon}</span>
-      <div class="mvals">
-        <div class="mmain">${main}</div>
-        <div class="msub">kalan</div>
+  // Kompakt görünüm: büyük "kalan" + küçük "ödenen/aidat" bilgisi
+  return `
+    <div class="mcell ${st.cls}" title="${tip}">
+      <div class="mrow">
+        <span class="dot ${st.cls==='ok'?'ok':st.cls==='partial'?'partial':st.cls==='bad'?'bad':'none'}"></span>
+        <div class="mrem">${format(rem)}</div>
+      </div>
+      <div class="msub">
+        <span>Ödenen ${format(paidN)}</span>
+        <span>Aidat ${format(dueN)}</span>
       </div>
     </div>`;
-  }
-
-  return `<div class="mcell ${st.cls}" title="${tip}">
-    <span class="micon">${st.icon}</span>
-    <div class="mvals">
-      <div class="mdue">${format(due)}</div>
-      <div class="mpaid">${format(paid)}</div>
-    </div>
-  </div>`;
-}
-
-
-function moneyBoxHTML(amountText, cls, label, title){
-  const tip = title || label || '';
-  const compact = getReportsCompact();
-  if(compact){
-    return `<div class="mcell ${cls} compact" title="${escapeHtml(tip)}">
-      <span class="micon">₺</span>
-      <div class="mvals">
-        <div class="mmain">${amountText}</div>
-        <div class="msub">${escapeHtml(label||'')}</div>
-      </div>
-    </div>`;
-  }
-  return `<div class="mcell ${cls}" title="${escapeHtml(tip)}">
-    <span class="micon">₺</span>
-    <div class="mvals"><div class="mdue">${amountText}</div><div class="mpaid">${escapeHtml(label||'')}</div></div>
-  </div>`;
 }
 
 const MONTHS_TR = ['Ocak','Şubat','Mart','Nisan','Mayıs','Haziran','Temmuz','Ağustos','Eylül','Ekim','Kasım','Aralık'];
@@ -289,106 +265,51 @@ async function ensureReportsUI(){
   qs('#repExportCSV')?.addEventListener('click', exportReportsCSV);
   qs('#repFlatPDF')?.addEventListener('click', generateFlatAnnualPDF);
   qs('#repMonthlyPDF')?.addEventListener('click', generateMonthlySummaryPDF);
-  try{ enforceExportVisibility(); }catch{}
-  // Reports UI: sade görünüm + sekmeler
-  const compact = qs('#repCompact');
-  if(compact && !compact.dataset.bound){
-    const saved = localStorage.getItem('repCompact')
-    if(saved === '0') compact.checked = false;
-    document.body.classList.toggle('rep-compact', compact.checked);
-    compact.addEventListener('change', ()=>{
-      localStorage.setItem('repCompact', compact.checked ? '1':'0');
-      document.body.classList.toggle('rep-compact', compact.checked);
-    });
-    compact.dataset.bound = '1';
-  }
 
+  // Rapor sekmeleri (Aidat / Ek Ödeme)
   const tabAidat = qs('#tabAidat');
   const tabExtra = qs('#tabExtra');
   if(tabAidat && tabExtra && !tabAidat.dataset.bound){
-    const showAidat = ()=>{
-      tabAidat.classList.add('active');
-      tabExtra.classList.remove('active');
-      // Aidat paneli zaten görünür; Ek ödeme panelini gizle
-      const extraPanel = qs('#extraReportPanel');
-      if(extraPanel) extraPanel.classList.add('hidden');
-      // aidat tablo wrap görünür
-      const aidatWrap = qs('#aidatReportWrap');
-      if(aidatWrap) aidatWrap.classList.remove('hidden');
+    const setTab = async (which)=>{
+      const isAidat = which==='aidat';
+      tabAidat.classList.toggle('active', isAidat);
+      tabExtra.classList.toggle('active', !isAidat);
+      tabAidat.setAttribute('aria-selected', String(isAidat));
+      tabExtra.setAttribute('aria-selected', String(!isAidat));
+
+      qs('#wrapAidat')?.classList.toggle('hidden', !isAidat);
+      qs('#wrapExtra')?.classList.toggle('hidden', isAidat);
+      qs('#filtersAidat')?.classList.toggle('hidden', !isAidat);
+      qs('#filtersExtra')?.classList.toggle('hidden', isAidat);
+
+      // Export butonları
+      qs('#repExportCSV')?.classList.toggle('hidden', !isAidat);
+      qs('#repFlatPDF')?.classList.toggle('hidden', !isAidat);
+      qs('#repMonthlyPDF')?.classList.toggle('hidden', !isAidat);
+      qs('#extraRepExportCSV')?.classList.toggle('hidden', isAidat);
+
+      // Başlık
+      const titleEl = qs('#reportTitle');
+      if(titleEl) titleEl.textContent = isAidat ? '📑 Yıllık Aidat Takip Cetveli' : '🧾 Ek Ödeme Raporu';
+
+      if(isAidat){
+        await renderReportsTable();
+      }else{
+        try{ ensureExtraReportYears(); }catch{}
+        await renderExtraReportTable();
+      }
     };
-    const showExtra = async ()=>{
-      tabExtra.classList.add('active');
-      tabAidat.classList.remove('active');
-      const aidatWrap = qs('#aidatReportWrap');
-      if(aidatWrap) aidatWrap.classList.add('hidden');
-      const extraPanel = qs('#extraReportPanel');
-      if(extraPanel) extraPanel.classList.remove('hidden');
-      try{ ensureExtraReportYears(); await renderExtraReportTable(); }catch(e){ console.error(e); }
-    };
-    tabAidat.addEventListener('click', ()=>{ showAidat(); });
-    tabExtra.addEventListener('click', ()=>{ showExtra(); });
-    // default
-    showAidat();
+
+    tabAidat.addEventListener('click', ()=>setTab('aidat'));
+    tabExtra.addEventListener('click', ()=>setTab('extra'));
     tabAidat.dataset.bound = '1';
+    // Default: aidat
+    setTab('aidat');
   }
 
+  try{ enforceExportVisibility(); }catch{}
 }
 
-
-
-/* ==================== Reports UI Enhancements (Tabs + Compact View) ==================== */
-let _reportsUIBound = false;
-let _reportsCompact = true;
-
-function getReportsCompact(){
-  const cb = qs('#repCompact');
-  if(cb) return !!cb.checked;
-  try{ return localStorage.getItem('repCompact') !== '0'; }catch{ return true; }
-}
-
-function ensureReportTabs(){
-  if(_reportsUIBound) return;
-  _reportsUIBound = true;
-
-  const tabDue = qs('#repTabDue');
-  const tabExtra = qs('#repTabExtra');
-  const duePanel = qs('#dueReportPanel');
-  const extraPanel = qs('#extraReportPanel');
-  const compactCb = qs('#repCompact');
-
-  // restore compact preference
-  try{
-    const saved = localStorage.getItem('repCompact');
-    if(compactCb && saved != null) compactCb.checked = (saved !== '0');
-  }catch{}
-
-  function activate(which){
-    if(which === 'extra'){
-      if(duePanel) duePanel.classList.add('hidden');
-      if(extraPanel) extraPanel.classList.remove('hidden');
-      tabDue?.classList.remove('active');
-      tabExtra?.classList.add('active');
-    }else{
-      if(extraPanel) extraPanel.classList.add('hidden');
-      if(duePanel) duePanel.classList.remove('hidden');
-      tabExtra?.classList.remove('active');
-      tabDue?.classList.add('active');
-    }
-  }
-
-  tabDue?.addEventListener('click', ()=> activate('due'));
-  tabExtra?.addEventListener('click', async ()=>{ activate('extra'); try{ ensureExtraReportYears(); await renderExtraReportTable(); }catch(e){ console.error(e);} });
-
-  compactCb?.addEventListener('change', ()=>{
-    try{ localStorage.setItem('repCompact', compactCb.checked ? '1' : '0'); }catch{}
-    // re-render both tables for consistent cells
-    renderReportsTable?.();
-    renderExtraReportTable?.();
-  });
-
-  // default
-  activate('due');
-}
 async function getYearFeesMap(year){
   const out = {}; // {flat: {'01': amount, ...}}
   const docs = await Promise.all(
@@ -489,9 +410,9 @@ async function renderReportsTable(){
     <tr>
       <th>Daire</th>
       ${MONTHS_TR.map(m=>`<th>${m}</th>`).join('')}
-      <th>Aidat Borç</th>
-      <th>Aidat Ödeme</th>
-      <th>Kalan</th>
+      <th class="num">💰 Borç</th>
+      <th class="num">💳 Ödenen</th>
+      <th class="num">🧾 Kalan</th>
     </tr>`;
 
   let sumDueAll=0, sumPaidAll=0;
@@ -544,7 +465,6 @@ async function renderExtraReportTable(){
   const year = ysel.value || String(new Date().getFullYear());
   const cfg = await getExtraPaymentForYear(year);
   const amount = +((cfg&&cfg.amount)||0);
-  const items = (cfg&&cfg.items)||{};
   const title = (cfg&&cfg.title)||'Yıllık Ek Ödeme';
 
   // Fee selector (tek kalem - yıllık)
@@ -568,18 +488,17 @@ async function renderExtraReportTable(){
     extraPaidByFlat[flat] = (extraPaidByFlat[flat]||0) + (+p.amount||0);
   });
 
-    tbody.innerHTML = flats.map(f=>{
-    const due = (items && items[f] != null) ? (+items[f]||0) : amount;
+  tbody.innerHTML = flats.map(f=>{
+    const due = amount;
     const paid = extraPaidByFlat[f]||0;
-    const rem = Math.max(0, due - paid);
-    const st = monthStatus(due, paid);
-    const stBadge = rem<=0 ? `<span class="badge ok">Tam</span>` : (paid>0 ? `<span class="badge warn">Kısmi</span>` : `<span class="badge bad">Ödenmedi</span>`);
+    const rem = due - paid;
+    const st = rem<=0 ? `<span class="strap ok"><span class="dot ok"></span> Ödendi</span>` : (paid>0 ? `<span class="strap partial"><span class="dot partial"></span> Kısmi</span>` : `<span class="strap bad"><span class="dot bad"></span> Bekliyor</span>`);
     return `<tr>
       <td><b>${escapeHtml(f)}</b></td>
-      <td class="mtd">${moneyBoxHTML(format(due), 'none', 'Borç', `Borç: ${format(due)}`)}</td>
-      <td class="mtd">${moneyBoxHTML(format(paid), paid>0 ? 'ok':'none', 'Ödenen', `Ödenen: ${format(paid)}`)}</td>
-      <td class="mtd">${moneyBoxHTML(format(rem), st.cls, 'Kalan', `Kalan: ${format(rem)}`)}</td>
-      <td>${stBadge}</td>
+      <td class="num money ${monthStatus(due, paid).cls}">${format(due)}</td>
+      <td class="num money ${monthStatus(due, paid).cls}">${format(paid)}</td>
+      <td class="num money ${monthStatus(due, paid).cls}"><b>${format(rem)}</b></td>
+      <td>${st}</td>
     </tr>`;
   }).join('') || `<tr><td colspan="5" class="muted">Kayıt bulunamadı.</td></tr>`;
 }
@@ -765,7 +684,7 @@ qs('#btnDashboard')?.addEventListener('click',()=>showPage('dashboard'));
 qs('#btnResidents')?.addEventListener('click',async ()=>{ showPage('residents'); await renderResidentsTable(); });
 qs('#btnPayments')?.addEventListener('click',async ()=>{ showPage('payments'); await ensurePaymentsUI(); await renderPaymentsTable(); });
 qs('#btnExpenses')?.addEventListener('click',async ()=>{ showPage('expenses'); await ensureExpensesUI(); await renderExpensesTable(); });
-qs('#btnReports')?.addEventListener('click',async ()=>{ showPage('reports'); ensureReportTabs(); bindReportsCompact(); bindReportTabs(); await (ensureReportsUI?.()||Promise.resolve()); await (renderReportsTable?.()||Promise.resolve()); try{ ensureExtraReportYears(); await renderExtraReportTable(); }catch(e){ console.error(e);} });
+qs('#btnReports')?.addEventListener('click',async ()=>{ showPage('reports'); await (ensureReportsUI?.()||Promise.resolve()); await (renderReportsTable?.()||Promise.resolve()); try{ ensureExtraReportYears(); await renderExtraReportTable(); }catch(e){ console.error(e);} });
 qs('#btnFees')?.addEventListener('click',async ()=>{ showPage('fees'); await ensureFeesUI(); await renderFeesTable(); });
 
 /* ==================== Firestore wrappers ==================== */
