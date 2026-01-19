@@ -233,78 +233,34 @@ input,select,textarea{width:100%;padding:10px 12px;border:1px solid var(--border
   border: 1px solid rgba(0,0,0,.08);
   padding: 6px 8px;
   line-height: 1.1;
-  overflow: hidden;
 }
-.mcell .mmask{
-  position:absolute;
-  inset:0;
-  display:flex;
-  align-items:center;
-  justify-content:center;
-  pointer-events:none;
-  font-weight: 900;
-  line-height: 1;
-  user-select:none;
-  transition: opacity .15s ease, transform .15s ease;
-}
-.mcell.ok .mmask::before{
-  content:'✓';
-  font-size: 38px;
-  opacity: 1;
-}
-.mcell.bad .mmask::before{
-  content:'✕';
-  font-size: 38px;
-  opacity: 1;
-}
-.mcell.partial .mmask::before{
-  content:'';
+.mcell .micon{
   width: 22px;
   height: 22px;
   border-radius: 999px;
-  border: 4px solid rgba(250, 204, 21, 1);
-  background: rgba(250, 204, 21, .55);
-  box-shadow: 0 0 0 10px rgba(250, 204, 21, .18);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 900;
+  font-size: 12px;
+  border: 1px solid rgba(0,0,0,.10);
+  background: rgba(255,255,255,.55);
 }
-.mcell.none .mmask::before{ content:''; }
-.mcell .mvals{ position:relative; z-index:1; }
 .mcell .mvals{ display:flex; flex-direction:column; align-items:center; }
-
-/* Varsayılan: ikon/işaret net görünsün. Hover'da detaylar ortaya çıksın */
-.mcell .mvals{
-  opacity:0;
-  transform: translateY(2px);
-  transition: opacity .15s ease, transform .15s ease;
-}
-.mcell:hover .mvals{
-  opacity:1;
-  transform: translateY(0);
-}
-.mcell .mmask{ opacity: 1; }
-.mcell:hover .mmask{ opacity: .18; }
-
-/* İşaretlerin rengi daha belirgin olsun */
-.mcell.ok .mmask{ color:#0e6b3a; }
-.mcell.bad .mmask{ color:#9b1c12; }
-.mcell.partial .mmask{ color:#854d0e; }
 .mcell .mdue{ font-weight: 800; font-variant-numeric: tabular-nums; }
 .mcell .mpaid{ font-size: 11px; opacity: .9; font-variant-numeric: tabular-nums; }
 
-/* === Mask behavior: icon visible by default, details on hover === */
-.mcell .mvals{ opacity: 0; transform: translateY(2px) scale(.99); transition: opacity .15s ease, transform .15s ease; }
-.mcell:hover .mvals{ opacity: 1; transform: translateY(0) scale(1); }
-
-/* When hovering, fade mask a bit so numbers behind can be read */
-.mcell:hover .mmask{ opacity: .18; transform: scale(1.02); }
-.mcell.partial:hover .mmask{ opacity: .30; }
-
 .mcell.ok{ background: rgba(46, 204, 113, .18); color:#0e6b3a; }
+.mcell.ok .micon{ color:#0e6b3a; }
 
 .mcell.partial{ background: rgba(241, 196, 15, .20); color:#8a6d07; }
+.mcell.partial .micon{ color:#8a6d07; }
 
 .mcell.bad{ background: rgba(231, 76, 60, .16); color:#9b1c12; }
+.mcell.bad .micon{ color:#9b1c12; }
 
 .mcell.none{ background: rgba(0,0,0,.05); color:#666; }
+.mcell.none .micon{ color:#666; }
 
 /* ===== Premium badges with icons ===== */
 .badge{ position: relative; }
